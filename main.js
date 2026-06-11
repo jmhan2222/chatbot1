@@ -159,7 +159,7 @@ class ChatApp {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error("Gemini API Error Details:", errorData);
+            console.error("Gemini API Error Details:", JSON.stringify(errorData, null, 2));
             const errorMessage = errorData.error?.message || `API returned ${response.status}`;
             throw new Error(errorMessage);
         }
