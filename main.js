@@ -41,14 +41,34 @@ class ChatApp {
 
         try {
             const context = this.findRelevantContext(text);
-            const answer = await this.getGeminiResponse(text, context);
+            
+            // Construct full prompt here
+            const fullPrompt = `
+                당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
+                제공된 [교범 데이터]를 기반으로 사용자의 질문에 답변하세요.
+                
+                [교범 데이터]
+                ${context}
+                
+                [사용자 질문]
+                ${text}
+                
+                지침:
+                1. 교범에 근거하여 정확하고 친절하게 답변하세요.
+                2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
+                3. 답변은 5줄 이내로 간결하게 작성하세요.
+                4. 중요한 단어는 **굵게** 표시하세요.
+                5. 한국어로 답변하세요.
+            `;
+
+            const answer = await this.getGeminiResponse(fullPrompt);
             
             loading.remove();
             this.appendMessage('bot', answer);
         } catch (error) {
             console.error("Chat Error:", error);
             loading.remove();
-            this.appendMessage('bot', "죄송합니다. 오류가 발생했습니다. 다시 시도해 주세요.");
+            this.appendMessage('bot', `죄송합니다. 오류가 발생했습니다: ${error.message}`);
         } finally {
             this.isTyping = false;
             this.userInput.disabled = false;
@@ -125,48 +145,31 @@ class ChatApp {
         return "관련 교범 내용을 찾지 못했습니다.";
     }
 
-    async getGeminiResponse(query, context) {
-        if (this.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
-            return "API 키가 설정되지 않았습니다. `main.js` 파일에서 `GEMINI_API_KEY`를 설정해 주세요.";
-        }
-
+    async getGeminiResponse(prompt) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
         
-        const prompt = `
-            당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
-            제공된 [교범 데이터]를 기반으로 사용자의 질문에 답변하세요.
-            
-            [교범 데이터]
-            ${context}
-            
-            [사용자 질문]
-            ${query}
-            
-            지침:
-            1. 교범에 근거하여 정확하고 친절하게 답변하세요.
-            2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
-            3. 답변은 5줄 이내로 간결하게 작성하세요.
-            4. 중요한 단어는 **굵게** 표시하세요.
-            5. 한국어로 답변하세요.
-        `;
-
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
+                contents: [{
+                    parts: [{
+                        text: prompt
+                    }]
+                }]
             })
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error("Gemini API Error Details:", JSON.stringify(errorData, null, 2));
-            const errorMessage = errorData.error?.message || `API returned ${response.status}`;
-            throw new Error(errorMessage);
+            const errorData = await response.json();
+            console.error("Gemini API Error Details:", errorData);
+            throw new Error(errorData.error?.message || "API 호출 실패");
         }
 
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || "답변을 가져오지 못했습니다.";
+        return data.candidates[0].content.parts[0].text;
     }
 }
 
