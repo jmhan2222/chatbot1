@@ -12,6 +12,7 @@ class ChatApp {
         this.chatContainer = document.getElementById('chat-container');
         this.userInput = document.getElementById('user-input');
         this.sendBtn = document.getElementById('send-btn');
+        this.apiKey = CONFIG.GEMINI_API_KEY;
         this.isTyping = false;
 
         this.init();
@@ -125,11 +126,11 @@ class ChatApp {
     }
 
     async getGeminiResponse(query, context) {
-        if (CONFIG.GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+        if (this.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
             return "API 키가 설정되지 않았습니다. `main.js` 파일에서 `GEMINI_API_KEY`를 설정해 주세요.";
         }
 
-        const url = `${CONFIG.API_URL}/${CONFIG.MODEL}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
         
         const prompt = `
             당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
