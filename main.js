@@ -158,7 +158,10 @@ class ChatApp {
         });
 
         if (!response.ok) {
-            throw new Error(`API returned ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            console.error("Gemini API Error Details:", errorData);
+            const errorMessage = errorData.error?.message || `API returned ${response.status}`;
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
