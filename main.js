@@ -3,8 +3,8 @@ import { manualData } from './data.js';
 // Configuration
 const CONFIG = {
     GEMINI_API_KEY: "AIzaSyCzUxlyC4pU1dJk2bjz-Uh9BL-2XiGHEZQ",
-    MODEL: "gemini-1.5-flash",
-    API_URL: "https://generativelanguage.googleapis.com/v1/models"
+    MODEL: "gemini-1.5-flash-latest",
+    API_URL: "https://generativelanguage.googleapis.com/v1beta/models"
 };
 
 class ChatApp {
