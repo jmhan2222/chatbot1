@@ -146,30 +146,42 @@ class ChatApp {
     }
 
     async getGeminiResponse(prompt) {
+        // 구글 AI 스튜디오 순정 API 키 규격과 100% 일치하는 다이렉트 주소 고정
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
         
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: prompt
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: prompt
+                        }]
                     }]
-                }]
-            })
-        });
+                })
+            });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error("Gemini API Error Details:", errorData);
-            throw new Error(errorData.error?.message || "API 호출 실패");
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error("구글 서버 에러 상세 정보:", errorData);
+                throw new Error(errorData.error?.message || "API 호출 실패");
+            }
+
+            const data = await response.json();
+            
+            // 구글 데이터 구조에서 답변 텍스트만 안전하게 추출
+            if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
+                return data.candidates[0].content.parts[0].text;
+            } else {
+                throw new Error("구글 응답 데이터 구조가 올바르지 않습니다.");
+            }
+        } catch (error) {
+            console.error("챗봇 통신 최종 에러:", error);
+            throw error;
         }
-
-        const data = await response.json();
-        return data.candidates[0].content.parts[0].text;
     }
 }
 
