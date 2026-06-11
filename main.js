@@ -2,7 +2,7 @@ import { manualData } from './data.js';
 
 // Configuration
 const CONFIG = {
-    GEMINI_API_KEY: "AQ.Ab8RN6I7rXCMunhfFLnDTT58ILW5t2DLVUom4H4NbPwg35GODQ",
+    GEMINI_API_KEY: "AIzaSyCzUxlyC4pU1dJk2bjz-Uh9BL-2XiGHEZQ",
     MODEL: "gemini-1.5-flash",
     API_URL: "https://generativelanguage.googleapis.com/v1beta/models"
 };
