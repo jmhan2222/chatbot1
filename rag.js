@@ -16,16 +16,16 @@ function invalidateCache() { _cache = null; _cacheTime = 0; }
 
 // ── 텍스트 추출 ────────────────────────────────────────────────────────────────
 
-export async function extractText(file) {
+export async function extractText(file, onPageProgress) {
     if (file.name.toLowerCase().endsWith('.pdf')) {
-        return extractPdfText(file);
+        return extractPdfText(file, onPageProgress);
     } else if (file.name.toLowerCase().endsWith('.docx')) {
         return extractDocxText(file);
     }
     throw new Error('PDF 또는 .docx 파일만 지원합니다.');
 }
 
-async function extractPdfText(file) {
+async function extractPdfText(file, onPageProgress) {
     const { getDocument, GlobalWorkerOptions } = await import(
         'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.min.mjs'
     );
@@ -38,6 +38,7 @@ async function extractPdfText(file) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
         text += content.items.map(item => item.str).join(' ') + '\n';
+        if (onPageProgress) onPageProgress(i, pdf.numPages);
     }
     return text;
 }
@@ -63,26 +64,26 @@ export function splitIntoChunks(text) {
 
 // ── Firestore 저장 (진행률 콜백 지원) ─────────────────────────────────────────
 
-export async function saveChunks(file, category, onProgress) {
-    const text = await extractText(file);
+export async function saveChunks(file, category, onChunkProgress, onPageProgress) {
+    const text = await extractText(file, onPageProgress);
     if (!text.trim()) throw new Error('텍스트를 추출할 수 없습니다. 스캔 이미지 PDF는 지원하지 않습니다.');
 
     const chunks = splitIntoChunks(text);
+    if (chunks.length === 0) throw new Error('텍스트를 추출할 수 없습니다. 스캔 이미지 PDF는 지원하지 않습니다.');
     const total = chunks.length;
 
-    // 청크를 순차 저장하며 진행률 콜백 호출
     for (let i = 0; i < total; i++) {
         await addDoc(collection(db, DOCS_COL), {
             filename:   file.name,
             category,
+            content:    chunks[i],
             chunk:      chunks[i],
             chunkIndex: i,
             createdAt:  serverTimestamp()
         });
-        if (onProgress) onProgress(i + 1, total);
+        if (onChunkProgress) onChunkProgress(i + 1, total);
     }
 
-    // 파일 메타데이터 저장 (목록 조회용)
     await addDoc(collection(db, FILES_COL), {
         filename:   file.name,
         category,

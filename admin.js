@@ -176,16 +176,30 @@ async function handleFile(file) {
         setStatus('error', 'PDF 또는 .docx 파일만 업로드 가능합니다.');
         return;
     }
-    const category = document.getElementById('category-select').value;
+    const isPdf     = /\.pdf$/i.test(file.name);
+    const category  = document.getElementById('category-select').value;
     setStatus('loading', `"${file.name}" 텍스트 추출 중...`);
     try {
         const { saveChunks } = await getRag();
-        const total = await saveChunks(file, category, (saved, t) => setProgress(saved, t, file.name));
-        setStatus('success', `✅ "${file.name}" 저장 완료 — ${total}개 청크`);
+        const total = await saveChunks(
+            file,
+            category,
+            (saved, t)       => setProgress(saved, t, file.name),
+            isPdf
+                ? (page, totalPages) => setPageProgress(page, totalPages, file.name)
+                : null
+        );
+        const tableNote = isPdf
+            ? '\n⚠️ 표·이미지 위주 PDF는 텍스트가 일부 누락될 수 있습니다.'
+            : '';
+        setStatus('success', `✅ "${file.name}" 저장 완료 — ${total}개 청크${tableNote}`);
         loadDocuments();
     } catch (err) {
         console.error(err);
-        setStatus('error', `업로드 실패: ${err.message}`);
+        const msg = err.code === 'permission-denied'
+            ? '권한 오류 (permission-denied): Firestore 보안 규칙을 확인하세요. 로그인 상태인지 확인하거나 Firebase Console → Firestore → Rules를 점검하세요.'
+            : `업로드 실패: ${err.message}`;
+        setStatus('error', msg);
     }
 }
 
@@ -205,6 +219,21 @@ function setProgress(saved, total, filename) {
         <div class="progress-header">
             <i class="fas fa-spinner fa-spin"></i>
             <span>"${filename}" — 청크 <strong>${saved}</strong> / ${total} 저장 중...</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <span class="progress-pct">${pct}%</span>
+    `;
+}
+
+function setPageProgress(page, totalPages, filename) {
+    const pct = Math.round((page / totalPages) * 100);
+    const el  = document.getElementById('upload-status');
+    el.className = 'upload-status loading';
+    el.classList.remove('hidden');
+    el.innerHTML = `
+        <div class="progress-header">
+            <i class="fas fa-spinner fa-spin"></i>
+            <span>"${filename}" — 텍스트 추출 중... <strong>${page}</strong> / ${totalPages} 페이지</span>
         </div>
         <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
         <span class="progress-pct">${pct}%</span>
