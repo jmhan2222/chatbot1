@@ -25,8 +25,19 @@ document.getElementById('login-form').addEventListener('submit', async e => {
             document.getElementById('email').value,
             document.getElementById('password').value
         );
-    } catch {
-        errEl.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
+    } catch (err) {
+        console.error('[Auth Error]', err.code, err.message);
+        const messages = {
+            'auth/invalid-credential':     '이메일 또는 비밀번호가 올바르지 않습니다.',
+            'auth/user-not-found':         '등록된 이메일이 없습니다.',
+            'auth/wrong-password':         '비밀번호가 올바르지 않습니다.',
+            'auth/invalid-email':          '이메일 형식이 올바르지 않습니다.',
+            'auth/user-disabled':          '비활성화된 계정입니다.',
+            'auth/too-many-requests':      '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.',
+            'auth/network-request-failed': '네트워크 오류. 인터넷 연결을 확인하세요.',
+            'auth/api-key-not-valid':      'Firebase API 키가 유효하지 않습니다.',
+        };
+        errEl.textContent = messages[err.code] || `오류: ${err.code}`;
         btn.disabled    = false;
         btn.textContent = '로그인';
     }
