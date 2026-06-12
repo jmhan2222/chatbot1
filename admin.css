@@ -276,6 +276,46 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
     font-weight: 600;
 }
 
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 20px;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    font-family: 'Noto Sans KR', sans-serif;
+    margin-top: 4px;
+}
+.btn-primary:hover   { background: var(--orange-dark); }
+.btn-primary:active  { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+.field textarea {
+    width: 100%;
+    border: 1.5px solid #E0E0E0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 0.95rem;
+    outline: none;
+    resize: vertical;
+    line-height: 1.6;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background: #FAFAFA;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+.field textarea:focus {
+    border-color: var(--orange);
+    box-shadow: 0 0 0 3px var(--orange-glow);
+    background: white;
+}
+
 .btn-delete {
     width: 36px;
     height: 36px;

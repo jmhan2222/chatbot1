@@ -75,6 +75,34 @@
                 <div id="upload-status" class="upload-status hidden"></div>
             </section>
 
+            <!-- 직접 입력 카드 -->
+            <section class="card">
+                <h2><i class="fas fa-keyboard"></i> 텍스트 직접 입력</h2>
+                <div class="field">
+                    <label>제목 (파일명으로 저장)</label>
+                    <input type="text" id="manual-title" placeholder="예: 근태 기본 규정">
+                </div>
+                <div class="field">
+                    <label>카테고리</label>
+                    <select id="manual-category">
+                        <option value="업무규정">업무규정</option>
+                        <option value="근태" selected>근태</option>
+                        <option value="안전">안전</option>
+                        <option value="서비스">서비스</option>
+                        <option value="기내방송">기내방송</option>
+                        <option value="공지사항">공지사항</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>내용</label>
+                    <textarea id="manual-content" rows="6" placeholder="교범 내용을 직접 입력하세요..."></textarea>
+                </div>
+                <button id="manual-save-btn" class="btn-primary">
+                    <i class="fas fa-save"></i> Firestore에 저장
+                </button>
+                <div id="manual-status" class="upload-status hidden"></div>
+            </section>
+
             <!-- 문서 목록 카드 -->
             <section class="card">
                 <h2><i class="fas fa-folder-open"></i> 업로드된 문서</h2>

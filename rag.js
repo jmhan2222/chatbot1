@@ -93,6 +93,36 @@ export async function saveChunks(file, category, onProgress) {
     return total;
 }
 
+// ── 텍스트 직접 저장 ──────────────────────────────────────────────────────────
+
+export async function saveTextChunks(title, category, text, onProgress) {
+    if (!text.trim()) throw new Error('내용을 입력해주세요.');
+
+    const chunks = splitIntoChunks(text);
+    const total  = chunks.length;
+
+    for (let i = 0; i < total; i++) {
+        await addDoc(collection(db, DOCS_COL), {
+            filename:   title,
+            category,
+            chunk:      chunks[i],
+            chunkIndex: i,
+            createdAt:  serverTimestamp()
+        });
+        if (onProgress) onProgress(i + 1, total);
+    }
+
+    await addDoc(collection(db, FILES_COL), {
+        filename:   title,
+        category,
+        chunkCount: total,
+        createdAt:  serverTimestamp()
+    });
+
+    invalidateCache();
+    return total;
+}
+
 // ── 검색 ───────────────────────────────────────────────────────────────────────
 
 export async function searchChunks(userQuery) {

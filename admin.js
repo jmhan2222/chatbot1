@@ -2,7 +2,7 @@ import { auth } from './firebase-config.js';
 import {
     signInWithEmailAndPassword, signOut, onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js';
-import { saveChunks, getAllFiles, deleteFile } from './rag.js';
+import { saveChunks, saveTextChunks, getAllFiles, deleteFile } from './rag.js';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -97,6 +97,46 @@ function setProgress(saved, total, filename) {
         </div>
         <span class="progress-pct">${pct}%</span>
     `;
+}
+
+// ── 텍스트 직접 입력 ─────────────────────────────────────────────────────────
+
+document.getElementById('manual-save-btn').addEventListener('click', async () => {
+    const title    = document.getElementById('manual-title').value.trim();
+    const category = document.getElementById('manual-category').value;
+    const content  = document.getElementById('manual-content').value.trim();
+
+    if (!title || !content) {
+        setManualStatus('error', '제목과 내용을 모두 입력해주세요.');
+        return;
+    }
+
+    const btn = document.getElementById('manual-save-btn');
+    btn.disabled = true;
+
+    try {
+        const total = await saveTextChunks(title, category, content, (saved, t) => {
+            setManualStatus('loading', `청크 <strong>${saved}</strong> / ${t} 저장 중...`);
+        });
+        setManualStatus('success', `✅ "${title}" 저장 완료 — ${total}개 청크`);
+        document.getElementById('manual-title').value   = '';
+        document.getElementById('manual-content').value = '';
+        loadDocuments();
+    } catch (err) {
+        console.error(err);
+        setManualStatus('error', `저장 실패: ${err.message}`);
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+function setManualStatus(type, msg) {
+    const el = document.getElementById('manual-status');
+    el.className = `upload-status ${type}`;
+    el.innerHTML = type === 'loading'
+        ? `<i class="fas fa-spinner fa-spin"></i> ${msg}`
+        : msg;
+    el.classList.remove('hidden');
 }
 
 // ── Document List ─────────────────────────────────────────────────────────────
