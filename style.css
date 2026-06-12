@@ -1,8 +1,8 @@
 :root {
-    --jeju-orange: #FF6700;
-    --jeju-dark-orange: #E65C00;
+    --jeju-orange: #FF6600;
+    --jeju-dark-orange: #E55A00;
     --chat-bg: #F5F5F7;
-    --my-bubble: #FF6700;
+    --my-bubble: #FF6600;
     --bot-bubble: #FFFFFF;
     --text-main: #333333;
     --text-sub: #666666;
@@ -164,17 +164,55 @@ header .status::before {
     margin-inline-start: 4px;
 }
 
-/* Input Area */
-.input-area {
+/* Footer wrapper */
+footer {
     background-color: var(--surface-raised);
     border-top: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.03);
+}
+
+/* Category Buttons */
+.category-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.category-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.cat-btn {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1.5px solid var(--jeju-orange);
+    background-color: transparent;
+    color: var(--jeju-orange);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Noto Sans KR', sans-serif;
+    white-space: nowrap;
+}
+
+.cat-btn:hover,
+.cat-btn:active {
+    background-color: var(--jeju-orange);
+    color: white;
+}
+
+/* Input Area */
+.input-area {
     display: flex;
     align-items: center;
-    padding: 12px 20px;
+    padding: 8px 16px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
     width: 100%;
     gap: 12px;
-    box-shadow: 0 -4px 12px rgba(0,0,0,0.03);
 }
 
 #user-input {
@@ -228,14 +266,22 @@ header .status::before {
     padding-inline-start: 4px;
 }
 
+.loading-bubble {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px !important;
+}
+
+.loading-text {
+    font-size: 0.85rem;
+    color: var(--text-sub);
+    white-space: nowrap;
+}
+
 .loading {
     display: flex;
     gap: 6px;
-    padding: 12px 16px;
-    background: white;
-    border-radius: 20px;
-    border-bottom-left-radius: 4px;
-    box-shadow: var(--shadow-soft);
     width: fit-content;
 }
 
@@ -284,9 +330,22 @@ header .status::before {
 }
 
 /* Responsive */
-@media (min-width: 768px) {
+@media (max-width: 430px) {
+    #chat-container {
+        padding: 16px 12px;
+    }
+    .input-area {
+        padding: 8px 12px;
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+    .category-bar {
+        padding: 8px 12px 4px;
+    }
+}
+
+@media (min-width: 431px) {
     body {
-        max-width: 500px;
+        max-width: 430px;
         margin: 0 auto;
         box-shadow: 0 0 40px rgba(0,0,0,0.15);
         position: relative;

@@ -2,7 +2,7 @@ import { manualData } from './data.js';
 
 // Configuration
 const CONFIG = {
-    GEMINI_API_KEY: "AIzaSyCzUxlyC4pU1dJk2bjz-Uh9BL-2XiGHEZQ",
+    GEMINI_API_KEY: "AQ.Ab8RN6JgkEa49tLrcWLB9g3PX379iluOp_p6tE-WHDocoVUGUA",
     MODEL: "gemini-2.0-flash",
     API_URL: "https://generativelanguage.googleapis.com/v1beta/models"
 };
@@ -24,7 +24,13 @@ class ChatApp {
             if (e.key === 'Enter') this.handleSend();
         });
 
-        // Focus input on load
+        document.querySelectorAll('.cat-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.userInput.value = btn.dataset.query;
+                this.userInput.focus();
+            });
+        });
+
         this.userInput.focus();
     }
 
@@ -120,10 +126,13 @@ class ChatApp {
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'message bot loading-container';
         loadingDiv.innerHTML = `
-            <div class="loading">
-                <div class="dot"></div>
-                <div class="dot"></div>
-                <div class="dot"></div>
+            <div class="bubble loading-bubble">
+                <div class="loading">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <span class="loading-text">답변을 생성하고 있습니다...</span>
             </div>
         `;
         this.chatContainer.appendChild(loadingDiv);
@@ -162,6 +171,7 @@ class ChatApp {
 
     async getGeminiResponse(prompt) {
         const url = `${CONFIG.API_URL}/${CONFIG.MODEL}:generateContent?key=${this.apiKey}`;
+        console.log(`[Gemini] 요청 시작 → 모델: ${CONFIG.MODEL}`);
         
         try {
             const response = await fetch(url, {
@@ -192,6 +202,7 @@ class ChatApp {
             const data = await response.json();
 
             if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
+                console.log(`[Gemini] 응답 수신 성공 (finishReason: ${data.candidates[0].finishReason})`);
                 return data.candidates[0].content.parts[0].text;
             } else if (data.candidates && data.candidates[0]?.finishReason === "SAFETY") {
                 throw new Error("안전 정책에 의해 응답이 차단되었습니다.");

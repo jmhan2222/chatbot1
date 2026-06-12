@@ -28,9 +28,19 @@
         </div>
     </main>
 
-    <footer class="input-area">
-        <input type="text" id="user-input" placeholder="질문을 입력하세요..." autocomplete="off">
-        <button id="send-btn" aria-label="전송"><i class="fas fa-arrow-up"></i></button>
+    <footer>
+        <div class="category-bar">
+            <button class="cat-btn" data-query="업무규정에 대해 알려주세요">업무규정</button>
+            <button class="cat-btn" data-query="근태 규정에 대해 알려주세요">근태</button>
+            <button class="cat-btn" data-query="안전 절차에 대해 알려주세요">안전</button>
+            <button class="cat-btn" data-query="서비스 매뉴얼에 대해 알려주세요">서비스</button>
+            <button class="cat-btn" data-query="기내방송 안내 멘트를 알려주세요">기내방송</button>
+            <button class="cat-btn" data-query="최근 공지사항을 알려주세요">공지사항</button>
+        </div>
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="질문을 입력하세요..." autocomplete="off">
+            <button id="send-btn" aria-label="전송"><i class="fas fa-arrow-up"></i></button>
+        </div>
     </footer>
 
     <script type="module" src="main.js"></script>
