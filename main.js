@@ -1,10 +1,9 @@
 import { manualData } from './data.js';
 
-// Configuration
 const CONFIG = {
-    GEMINI_API_KEY: "AQ.Ab8RN6JX_tbMYe0WTZ7fscuENhtz9NpjQIdbLgIPcJAdHe44ZQ",
-    MODEL: "gemini-2.0-flash",
-    API_URL: "https://generativelanguage.googleapis.com/v1beta/models"
+    GROQ_API_KEY: "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",
+    MODEL: "llama-3.3-70b-versatile",
+    API_URL: "https://api.groq.com/openai/v1/chat/completions"
 };
 
 class ChatApp {
@@ -12,7 +11,7 @@ class ChatApp {
         this.chatContainer = document.getElementById('chat-container');
         this.userInput = document.getElementById('user-input');
         this.sendBtn = document.getElementById('send-btn');
-        this.apiKey = CONFIG.GEMINI_API_KEY;
+        this.apiKey = CONFIG.GROQ_API_KEY;
         this.isTyping = false;
 
         this.init();
@@ -44,23 +43,8 @@ class ChatApp {
         this.userInput.value = '';
         this.userInput.disabled = true;
 
-        const fullPrompt = `
-            당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
-            제공된 [교범 데이터]를 기반으로 사용자의 질문에 답변하세요.
-
-            [교범 데이터]
-            ${this.findRelevantContext(text)}
-
-            [사용자 질문]
-            ${text}
-
-            지침:
-            1. 교범에 근거하여 정확하고 친절하게 답변하세요.
-            2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
-            3. 답변은 5줄 이내로 간결하게 작성하세요.
-            4. 중요한 단어는 **굵게** 표시하세요.
-            5. 한국어로 답변하세요.
-        `;
+        const context = this.findRelevantContext(text);
+        const fullPrompt = `[교범 데이터]\n${context}\n\n[사용자 질문]\n${text}`;
 
         let loading;
         try {
@@ -68,14 +52,14 @@ class ChatApp {
 
             let answer;
             try {
-                answer = await this.getGeminiResponse(fullPrompt);
+                answer = await this.getGroqResponse(fullPrompt);
             } catch (firstError) {
                 if (firstError.status === 429) {
-                    console.warn('[Gemini] 429 한도 초과 → 10초 후 재시도');
+                    console.warn('[Groq] 429 한도 초과 → 10초 후 재시도');
                     const loadingText = loading.querySelector('.loading-text');
                     if (loadingText) loadingText.textContent = '잠시 후 답변드릴게요 ⏳';
                     await new Promise(r => setTimeout(r, 10000));
-                    answer = await this.getGeminiResponse(fullPrompt);
+                    answer = await this.getGroqResponse(fullPrompt);
                 } else {
                     throw firstError;
                 }
@@ -182,22 +166,34 @@ class ChatApp {
         return "관련 교범 내용을 찾지 못했습니다.";
     }
 
-    async getGeminiResponse(prompt) {
-        const url = `${CONFIG.API_URL}/${CONFIG.MODEL}:generateContent?key=${this.apiKey}`;
-        console.log(`[Gemini] 요청 시작 → 모델: ${CONFIG.MODEL}`);
-        
+    async getGroqResponse(userMessage) {
         try {
-            const response = await fetch(url, {
+            const response = await fetch(CONFIG.API_URL, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`
                 },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }]
+                    model: CONFIG.MODEL,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
+제공된 교범 데이터를 기반으로 사용자의 질문에 답변하세요.
+지침:
+1. 교범에 근거하여 정확하고 친절하게 답변하세요.
+2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
+3. 답변은 5줄 이내로 간결하게 작성하세요.
+4. 중요한 단어는 **굵게** 표시하세요.
+5. 한국어로 답변하세요.`
+                        },
+                        {
+                            role: 'user',
+                            content: userMessage
+                        }
+                    ],
+                    max_tokens: 1024
                 })
             });
 
@@ -217,15 +213,9 @@ class ChatApp {
             }
 
             const data = await response.json();
-
-            if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
-                console.log(`[Gemini] 응답 수신 성공 (finishReason: ${data.candidates[0].finishReason})`);
-                return data.candidates[0].content.parts[0].text;
-            } else if (data.candidates && data.candidates[0]?.finishReason === "SAFETY") {
-                throw new Error("안전 정책에 의해 응답이 차단되었습니다.");
-            } else {
-                throw new Error("응답 데이터 구조가 올바르지 않습니다.");
-            }
+            const text = data.choices?.[0]?.message?.content;
+            if (!text) throw new Error("응답 데이터 구조가 올바르지 않습니다.");
+            return text;
         } catch (error) {
             if (error.name === "TypeError") {
                 throw new TypeError("fetch 네트워크 오류: " + error.message);
