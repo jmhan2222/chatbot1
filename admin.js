@@ -1,4 +1,3 @@
-// auth만 정적 import — rag.js 로딩 실패가 로그인에 영향을 주지 않도록 분리
 import { auth } from './firebase-config.js';
 import {
     signInWithEmailAndPassword, signOut, onAuthStateChanged
@@ -18,11 +17,26 @@ function dbg(id, msg) {
     if (el) el.textContent = msg;
 }
 
-// SDK 로딩 확인
-dbg('dbg-sdk', `✅ Firebase SDK 10.14.0 로드됨`);
+// SDK 및 auth 객체 상태 콘솔 출력
+console.log('[Firebase] SDK 10.14.0 로드됨');
+console.log('[Firebase] auth 객체:', auth);
+console.log('[Firebase] auth.app:', auth?.app?.name, '| authDomain:', auth?.app?.options?.authDomain);
+dbg('dbg-sdk', `✅ Firebase SDK 10.14.0 로드됨 (app: ${auth?.app?.name ?? '?'})`);
+
+// Auth 초기화 완료 promise — 로그인 시도 전에 await
+const authReady = new Promise(resolve => {
+    const unsub = onAuthStateChanged(auth, user => {
+        unsub(); // 첫 이벤트만 수신 후 해제
+        resolve(user);
+    }, err => {
+        console.error('[Auth Init Error]', err);
+        resolve(null);
+    });
+});
 
 // Auth 상태 실시간 반영
 onAuthStateChanged(auth, user => {
+    console.log('[Auth State]', user ? `로그인됨: ${user.email}` : '로그아웃');
     if (user) {
         dbg('dbg-auth', `✅ 로그인됨: ${user.email}`);
         showAdmin();
@@ -106,25 +120,32 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     btn.textContent = '로그인 중...';
     errEl.textContent = '';
 
-    console.log('[Login] 시도:', email);
+    // Firebase 초기화 완료 대기 후 로그인 시도
+    await authReady;
+    console.log('[Login] auth.currentUser before attempt:', auth.currentUser);
+    console.log('[Login] 시도 이메일:', email);
 
     try {
         const cred = await signInWithEmailAndPassword(auth, email, pw);
         console.log('[Login] 성공:', cred.user.email);
     } catch (err) {
-        console.error('[Login Error]', err.code, err.message);
-        const messages = {
-            'auth/invalid-credential':     '이메일 또는 비밀번호가 올바르지 않습니다.',
-            'auth/user-not-found':         '등록된 이메일이 없습니다.',
-            'auth/wrong-password':         '비밀번호가 올바르지 않습니다.',
-            'auth/invalid-email':          '이메일 형식이 올바르지 않습니다.',
-            'auth/user-disabled':          '비활성화된 계정입니다.',
-            'auth/too-many-requests':      '시도 횟수 초과. 잠시 후 다시 시도하세요.',
-            'auth/network-request-failed': '네트워크 오류. 인터넷 연결을 확인하세요.',
+        // 원시 에러 코드를 그대로 화면에 표시
+        console.error('[Login Error] code:', err.code, '| message:', err.message);
+        errEl.textContent = `오류 코드: ${err.code}`;
+        // 코드별 추가 안내 메시지
+        const hint = {
+            'auth/invalid-credential':     '→ 이메일/비밀번호가 일치하지 않거나 계정이 없습니다.',
+            'auth/user-not-found':         '→ 해당 이메일로 가입된 계정이 없습니다.',
+            'auth/wrong-password':         '→ 비밀번호가 올바르지 않습니다.',
+            'auth/invalid-email':          '→ 이메일 형식이 올바르지 않습니다.',
+            'auth/user-disabled':          '→ 비활성화된 계정입니다.',
+            'auth/too-many-requests':      '→ 시도 횟수 초과. 잠시 후 다시 시도하세요.',
+            'auth/network-request-failed': '→ 네트워크 오류. 인터넷 연결을 확인하세요.',
+            'auth/operation-not-allowed':  '→ Firebase Console에서 이메일/비밀번호 로그인을 활성화하세요.',
             'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
-                                           'Firebase API 키가 유효하지 않습니다.',
+                                           '→ firebase-config.js의 API 키가 유효하지 않습니다.',
         };
-        errEl.textContent = (messages[err.code] ?? '알 수 없는 오류') + ` [${err.code}]`;
+        if (hint[err.code]) errEl.textContent += `\n${hint[err.code]}`;
         btn.disabled    = false;
         btn.textContent = '로그인';
     }
