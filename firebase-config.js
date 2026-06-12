@@ -4,12 +4,12 @@ import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-aut
 
 // Firebase 콘솔 → 프로젝트 설정 → 웹 앱 추가 후 아래 값을 채워넣으세요
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDjjYL5VS-88wl3KhhQMgnIJGEmvbRk2vs",
+    authDomain: "chatbot-7aacc.firebaseapp.com",
+    projectId: "chatbot-7aacc",
+    storageBucket: "chatbot-7aacc.firebasestorage.app",
+    messagingSenderId: "118233272903",
+    appId: "1:118233272903:web:eb3aad5634a126ff631762"
 };
 
 const app = initializeApp(firebaseConfig);
