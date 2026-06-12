@@ -2,7 +2,7 @@ import { manualData } from './data.js';
 
 // Configuration
 const CONFIG = {
-    GEMINI_API_KEY: "AQ.Ab8RN6JgkEa49tLrcWLB9g3PX379iluOp_p6tE-WHDocoVUGUA",
+    GEMINI_API_KEY: "AQ.Ab8RN6JX_tbMYe0WTZ7fscuENhtz9NpjQIdbLgIPcJAdHe44ZQ",
     MODEL: "gemini-2.0-flash",
     API_URL: "https://generativelanguage.googleapis.com/v1beta/models"
 };
@@ -31,6 +31,10 @@ class ChatApp {
             });
         });
 
+        // API 키 앞 4글자 확인
+        const keyPrefix = this.apiKey.substring(0, 4);
+        console.log(`[API키 확인] 앞 4글자: "${keyPrefix}" → ${keyPrefix.startsWith('AG') ? '✅ AG로 시작' : '⚠️ AG로 시작하지 않음 (확인 필요)'}`);
+
         this.userInput.focus();
     }
 
@@ -39,36 +43,48 @@ class ChatApp {
         if (!text || this.isTyping) return;
 
         this.isTyping = true;
+        this.sendBtn.disabled = true;
         this.appendMessage('user', text);
         this.userInput.value = '';
         this.userInput.disabled = true;
 
+        const fullPrompt = `
+            당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
+            제공된 [교범 데이터]를 기반으로 사용자의 질문에 답변하세요.
+
+            [교범 데이터]
+            ${this.findRelevantContext(text)}
+
+            [사용자 질문]
+            ${text}
+
+            지침:
+            1. 교범에 근거하여 정확하고 친절하게 답변하세요.
+            2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
+            3. 답변은 5줄 이내로 간결하게 작성하세요.
+            4. 중요한 단어는 **굵게** 표시하세요.
+            5. 한국어로 답변하세요.
+        `;
+
         let loading;
         try {
             loading = this.showLoading();
-            const context = this.findRelevantContext(text);
-            
-            // Construct full prompt here
-            const fullPrompt = `
-                당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
-                제공된 [교범 데이터]를 기반으로 사용자의 질문에 답변하세요.
-                
-                [교범 데이터]
-                ${context}
-                
-                [사용자 질문]
-                ${text}
-                
-                지침:
-                1. 교범에 근거하여 정확하고 친절하게 답변하세요.
-                2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
-                3. 답변은 5줄 이내로 간결하게 작성하세요.
-                4. 중요한 단어는 **굵게** 표시하세요.
-                5. 한국어로 답변하세요.
-            `;
 
-            const answer = await this.getGeminiResponse(fullPrompt);
-            
+            let answer;
+            try {
+                answer = await this.getGeminiResponse(fullPrompt);
+            } catch (firstError) {
+                if (firstError.status === 429) {
+                    console.warn('[Gemini] 429 한도 초과 → 10초 후 재시도');
+                    const loadingText = loading.querySelector('.loading-text');
+                    if (loadingText) loadingText.textContent = '잠시 후 답변드릴게요 ⏳';
+                    await new Promise(r => setTimeout(r, 10000));
+                    answer = await this.getGeminiResponse(fullPrompt);
+                } else {
+                    throw firstError;
+                }
+            }
+
             if (loading) loading.remove();
             this.appendMessage('bot', answer);
         } catch (error) {
@@ -78,7 +94,7 @@ class ChatApp {
             let errorMsg = "죄송합니다. 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
             if (error.message.includes("API_KEY_INVALID") || error.message.includes("API key not valid")) {
                 errorMsg = "API 키가 유효하지 않습니다. 관리자에게 문의하세요.";
-            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("quota")) {
+            } else if (error.status === 429 || error.message.includes("QUOTA_EXCEEDED") || error.message.includes("quota")) {
                 errorMsg = "API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
             } else if (error.message.includes("MODEL_NOT_FOUND") || error.message.includes("not found")) {
                 errorMsg = "모델을 찾을 수 없습니다. 관리자에게 문의하세요.";
@@ -91,6 +107,7 @@ class ChatApp {
             this.appendMessage('bot', errorMsg);
         } finally {
             this.isTyping = false;
+            this.sendBtn.disabled = false;
             this.userInput.disabled = false;
             this.userInput.focus();
             this.scrollToBottom();
@@ -193,10 +210,14 @@ class ChatApp {
                 try {
                     errorData = await response.json();
                 } catch {
-                    throw new Error(`API 호출 실패 (HTTP ${response.status})`);
+                    const err = new Error(`API 호출 실패 (HTTP ${response.status})`);
+                    err.status = response.status;
+                    throw err;
                 }
                 console.error("API 에러 상세:", errorData);
-                throw new Error(errorData.error?.message || `API 호출 실패 (HTTP ${response.status})`);
+                const err = new Error(errorData.error?.message || `API 호출 실패 (HTTP ${response.status})`);
+                err.status = response.status;
+                throw err;
             }
 
             const data = await response.json();
