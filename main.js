@@ -3,7 +3,7 @@ import { manualData } from './data.js';
 // Configuration
 const CONFIG = {
     GEMINI_API_KEY: "AIzaSyCzUxlyC4pU1dJk2bjz-Uh9BL-2XiGHEZQ",
-    MODEL: "gemini-1.5-flash",
+    MODEL: "gemini-2.0-flash",
     API_URL: "https://generativelanguage.googleapis.com/v1beta/models"
 };
 
@@ -68,14 +68,20 @@ class ChatApp {
         } catch (error) {
             console.error("Chat Error:", error);
             if (loading) loading.remove();
-            
-            let errorMsg = "죄송합니다. 오류가 발생했습니다.";
-            if (error.message.includes("API_KEY_INVALID")) {
+
+            let errorMsg = "죄송합니다. 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("API key not valid")) {
                 errorMsg = "API 키가 유효하지 않습니다. 관리자에게 문의하세요.";
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("quota")) {
+                errorMsg = "API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+            } else if (error.message.includes("MODEL_NOT_FOUND") || error.message.includes("not found")) {
+                errorMsg = "모델을 찾을 수 없습니다. 관리자에게 문의하세요.";
+            } else if (error.name === "TypeError" || error.message.includes("fetch")) {
+                errorMsg = "네트워크 연결을 확인해주세요.";
             } else if (error.message.includes("API 호출 실패")) {
-                errorMsg = `연결 오류: ${error.message}`;
+                errorMsg = `서버 오류가 발생했습니다. (${error.message})`;
             }
-            
+
             this.appendMessage('bot', errorMsg);
         } finally {
             this.isTyping = false;
@@ -155,8 +161,7 @@ class ChatApp {
     }
 
     async getGeminiResponse(prompt) {
-        // 구글 AI 스튜디오 순정 API 키 규격과 100% 일치하는 다이렉트 주소 고정
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
+        const url = `${CONFIG.API_URL}/${CONFIG.MODEL}:generateContent?key=${this.apiKey}`;
         
         try {
             const response = await fetch(url, {
@@ -174,21 +179,29 @@ class ChatApp {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                console.error("구글 서버 에러 상세 정보:", errorData);
-                throw new Error(errorData.error?.message || "API 호출 실패");
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch {
+                    throw new Error(`API 호출 실패 (HTTP ${response.status})`);
+                }
+                console.error("API 에러 상세:", errorData);
+                throw new Error(errorData.error?.message || `API 호출 실패 (HTTP ${response.status})`);
             }
 
             const data = await response.json();
-            
-            // 구글 데이터 구조에서 답변 텍스트만 안전하게 추출
+
             if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
                 return data.candidates[0].content.parts[0].text;
+            } else if (data.candidates && data.candidates[0]?.finishReason === "SAFETY") {
+                throw new Error("안전 정책에 의해 응답이 차단되었습니다.");
             } else {
-                throw new Error("구글 응답 데이터 구조가 올바르지 않습니다.");
+                throw new Error("응답 데이터 구조가 올바르지 않습니다.");
             }
         } catch (error) {
-            console.error("챗봇 통신 최종 에러:", error);
+            if (error.name === "TypeError") {
+                throw new TypeError("fetch 네트워크 오류: " + error.message);
+            }
             throw error;
         }
     }
