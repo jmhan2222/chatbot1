@@ -52,10 +52,11 @@ async function extractDocxText(file) {
 
 export function splitIntoChunks(text) {
     const cleaned = text.replace(/\s+/g, ' ').trim();
+    if (!cleaned) return [];
     const chunks = [];
     for (let i = 0; i < cleaned.length; i += CHUNK_SIZE) {
         const chunk = cleaned.slice(i, i + CHUNK_SIZE).trim();
-        if (chunk.length > 30) chunks.push(chunk);
+        if (chunk.length > 0) chunks.push(chunk);
     }
     return chunks;
 }
@@ -96,16 +97,21 @@ export async function saveChunks(file, category, onProgress) {
 // ── 텍스트 직접 저장 ──────────────────────────────────────────────────────────
 
 export async function saveTextChunks(title, category, text, onProgress) {
-    if (!text.trim()) throw new Error('내용을 입력해주세요.');
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error('내용을 입력해주세요.');
 
-    const chunks = splitIntoChunks(text);
+    const chunks = splitIntoChunks(trimmed);
+    if (chunks.length === 0) throw new Error('저장할 내용이 너무 짧습니다. 내용을 더 입력해주세요.');
     const total  = chunks.length;
+
+    console.log('[saveTextChunks] 청크 수:', total, '| 첫 청크 미리보기:', chunks[0]?.slice(0, 50));
 
     for (let i = 0; i < total; i++) {
         await addDoc(collection(db, DOCS_COL), {
             filename:   title,
             category,
-            chunk:      chunks[i],
+            content:    chunks[i],   // content 필드명으로 저장
+            chunk:      chunks[i],   // 검색 호환성 유지
             chunkIndex: i,
             createdAt:  serverTimestamp()
         });

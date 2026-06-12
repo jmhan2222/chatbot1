@@ -218,8 +218,16 @@ document.getElementById('manual-save-btn').addEventListener('click', async () =>
     const category = document.getElementById('manual-category').value;
     const content  = document.getElementById('manual-content').value.trim();
 
-    if (!title || !content) {
-        setManualStatus('error', '제목과 내용을 모두 입력해주세요.');
+    if (!title) {
+        setManualStatus('error', '제목을 입력해주세요.');
+        return;
+    }
+    if (!content) {
+        setManualStatus('error', '내용을 입력해주세요.');
+        return;
+    }
+    if (content.trim().length < 2) {
+        setManualStatus('error', '내용이 너무 짧습니다. 더 입력해주세요.');
         return;
     }
     const btn = document.getElementById('manual-save-btn');
