@@ -37,9 +37,9 @@ class ChatApp {
         this.userInput.value = '';
         this.userInput.disabled = true;
 
-        const loading = this.showLoading();
-
+        let loading;
         try {
+            loading = this.showLoading();
             const context = this.findRelevantContext(text);
             
             // Construct full prompt here
@@ -63,16 +63,25 @@ class ChatApp {
 
             const answer = await this.getGeminiResponse(fullPrompt);
             
-            loading.remove();
+            if (loading) loading.remove();
             this.appendMessage('bot', answer);
         } catch (error) {
             console.error("Chat Error:", error);
-            loading.remove();
-            this.appendMessage('bot', `죄송합니다. 오류가 발생했습니다: ${error.message}`);
+            if (loading) loading.remove();
+            
+            let errorMsg = "죄송합니다. 오류가 발생했습니다.";
+            if (error.message.includes("API_KEY_INVALID")) {
+                errorMsg = "API 키가 유효하지 않습니다. 관리자에게 문의하세요.";
+            } else if (error.message.includes("API 호출 실패")) {
+                errorMsg = `연결 오류: ${error.message}`;
+            }
+            
+            this.appendMessage('bot', errorMsg);
         } finally {
             this.isTyping = false;
             this.userInput.disabled = false;
             this.userInput.focus();
+            this.scrollToBottom();
         }
     }
 
