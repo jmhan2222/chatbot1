@@ -1,6 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js';
-import { getStorage } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-storage.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js';
 
 // Firebase 콘솔 → 프로젝트 설정 → 웹 앱 추가 후 아래 값을 채워넣으세요
@@ -15,5 +14,4 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
 export const auth = getAuth(app);

@@ -200,13 +200,37 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
     padding: 12px 16px;
     border-radius: 10px;
     font-size: 0.9rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
 }
 .upload-status.loading { background: #FFF3E0; color: #E65100; }
 .upload-status.success { background: #E8F5E9; color: #2E7D32; }
 .upload-status.error   { background: #FFEBEE; color: #C62828; }
+
+.progress-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 0.88rem;
+}
+.progress-track {
+    height: 6px;
+    background: rgba(0,0,0,0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.progress-fill {
+    height: 100%;
+    background: var(--orange);
+    border-radius: 3px;
+    transition: width 0.2s ease;
+}
+.progress-pct {
+    display: block;
+    text-align: right;
+    font-size: 0.78rem;
+    margin-top: 4px;
+    opacity: 0.7;
+}
 
 /* Document List */
 .list-loading, .empty-msg {

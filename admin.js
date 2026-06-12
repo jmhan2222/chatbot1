@@ -2,9 +2,9 @@ import { auth } from './firebase-config.js';
 import {
     signInWithEmailAndPassword, signOut, onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js';
-import { uploadAndSave, getAllFiles, deleteFile } from './rag.js';
+import { saveChunks, getAllFiles, deleteFile } from './rag.js';
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
 onAuthStateChanged(auth, user => {
     document.getElementById('login-section').classList.toggle('hidden', !!user);
@@ -14,9 +14,9 @@ onAuthStateChanged(auth, user => {
 
 document.getElementById('login-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = document.getElementById('login-btn');
+    const btn   = document.getElementById('login-btn');
     const errEl = document.getElementById('login-error');
-    btn.disabled = true;
+    btn.disabled    = true;
     btn.textContent = '로그인 중...';
     errEl.textContent = '';
     try {
@@ -27,7 +27,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
         );
     } catch {
         errEl.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
-        btn.disabled = false;
+        btn.disabled    = false;
         btn.textContent = '로그인';
     }
 });
@@ -36,11 +36,11 @@ document.getElementById('logout-btn').addEventListener('click', () => signOut(au
 
 // ── File Upload ───────────────────────────────────────────────────────────────
 
-const dropZone = document.getElementById('drop-zone');
+const dropZone  = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 
 dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
     e.preventDefault();
@@ -57,11 +57,15 @@ async function handleFile(file) {
         setStatus('error', 'PDF 또는 .docx 파일만 업로드 가능합니다.');
         return;
     }
+
     const category = document.getElementById('category-select').value;
     setStatus('loading', `"${file.name}" 텍스트 추출 중...`);
+
     try {
-        const count = await uploadAndSave(file, category);
-        setStatus('success', `✅ "${file.name}" 업로드 완료 (${count}개 청크 저장)`);
+        const total = await saveChunks(file, category, (saved, t) => {
+            setProgress(saved, t, file.name);
+        });
+        setStatus('success', `✅ "${file.name}" 저장 완료 — ${total}개 청크가 Firestore에 저장됐습니다.`);
         loadDocuments();
     } catch (err) {
         console.error(err);
@@ -76,6 +80,23 @@ function setStatus(type, msg) {
         ? `<i class="fas fa-spinner fa-spin"></i> ${msg}`
         : msg;
     el.classList.remove('hidden');
+}
+
+function setProgress(saved, total, filename) {
+    const pct = Math.round((saved / total) * 100);
+    const el  = document.getElementById('upload-status');
+    el.className = 'upload-status loading';
+    el.classList.remove('hidden');
+    el.innerHTML = `
+        <div class="progress-header">
+            <i class="fas fa-spinner fa-spin"></i>
+            <span>"${filename}" — 청크 <strong>${saved}</strong> / ${total} 저장 중...</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill" style="width: ${pct}%"></div>
+        </div>
+        <span class="progress-pct">${pct}%</span>
+    `;
 }
 
 // ── Document List ─────────────────────────────────────────────────────────────
@@ -103,8 +124,7 @@ async function loadDocuments() {
                 </div>
                 <button class="btn-delete"
                     data-id="${f.id}"
-                    data-filename="${f.filename}"
-                    data-path="${f.storagePath || ''}">
+                    data-filename="${f.filename}">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -120,15 +140,15 @@ async function loadDocuments() {
 
 async function handleDelete(e) {
     if (!confirm('이 문서와 관련된 모든 청크를 삭제하시겠습니까?')) return;
-    const btn = e.currentTarget;
-    const { id, filename, path } = btn.dataset;
+    const btn      = e.currentTarget;
+    const { id, filename } = btn.dataset;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     try {
-        await deleteFile(id, filename, path);
+        await deleteFile(id, filename);
         loadDocuments();
     } catch {
-        btn.disabled = false;
+        btn.disabled  = false;
         btn.innerHTML = '<i class="fas fa-trash"></i>';
         alert('삭제 실패. 다시 시도해주세요.');
     }
