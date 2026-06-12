@@ -100,7 +100,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
             'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
                                            'Firebase API 키가 유효하지 않습니다.',
         };
-        errEl.textContent = messages[err.code] || `오류 코드: ${err.code}`;
+        errEl.textContent = (messages[err.code] ?? '알 수 없는 오류') + ` [${err.code}]`;
         btn.disabled    = false;
         btn.textContent = '로그인';
     }
