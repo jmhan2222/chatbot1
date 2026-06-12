@@ -111,6 +111,24 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
     transition: all 0.2s;
 }
 .debug-btn:hover { border-color: var(--orange); color: var(--orange); }
+.debug-test-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.debug-test-row .debug-btn { margin-top: 0; white-space: nowrap; }
+.debug-email-input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    background: white;
+}
+.dbg-result {
+    margin-top: 8px;
+    font-family: monospace;
+    font-size: 0.76rem;
+    white-space: pre-wrap;
+    line-height: 1.5;
+    color: #555;
+}
 
 .back-link {
     display: block;

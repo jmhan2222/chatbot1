@@ -37,22 +37,46 @@ onAuthStateChanged(auth, user => {
 });
 
 document.getElementById('debug-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('debug-btn');
+    const btn       = document.getElementById('debug-btn');
+    const resultEl  = document.getElementById('dbg-result');
+    const emailInput = document.getElementById('debug-email');
+    const testEmail = emailInput.value.trim() || 'debug-test@test.com';
+
     btn.textContent = '테스트 중...';
-    btn.disabled = true;
+    btn.disabled    = true;
+    resultEl.textContent = '';
+
     try {
-        // Auth 프로젝트 접근 가능 여부 확인 (존재하지 않는 계정으로 시도)
-        await signInWithEmailAndPassword(auth, 'debug-test@test.com', 'wrongpass');
+        await signInWithEmailAndPassword(auth, testEmail, '__probe__');
     } catch (err) {
-        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-            dbg('dbg-auth', `✅ Firebase Auth 정상 연결 (코드: ${err.code})`);
+        const diagMap = {
+            'auth/invalid-credential':
+                `⚠️ [auth/invalid-credential] 이메일 또는 비밀번호 불일치.\n→ Firebase Console에서 "${testEmail}" 계정이 존재하는지 확인하세요.`,
+            'auth/user-not-found':
+                `❌ [auth/user-not-found] "${testEmail}" 계정이 Firebase Auth에 없습니다.\n→ Firebase Console → Authentication → Users에서 계정을 추가하세요.`,
+            'auth/wrong-password':
+                `⚠️ [auth/wrong-password] 계정은 있지만 비밀번호 불일치.\n→ 비밀번호 재설정 후 새 비밀번호로 시도하세요.`,
+            'auth/operation-not-allowed':
+                `❌ [auth/operation-not-allowed] 이메일/비밀번호 로그인이 비활성화됨.\n→ Firebase Console → Authentication → Sign-in method에서 활성화하세요.`,
+            'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
+                `❌ [api-key-invalid] firebase-config.js의 API 키가 유효하지 않습니다.`,
+            'auth/network-request-failed':
+                `❌ [network-request-failed] 네트워크 오류. 인터넷 연결을 확인하세요.`,
+        };
+        const diag = diagMap[err.code];
+        if (diag) {
+            resultEl.textContent = diag;
+            resultEl.style.color = err.code.includes('invalid-credential') || err.code.includes('wrong-password') ? '#b8860b' : err.code === 'auth/user-not-found' ? '#cc0000' : '#666';
+            dbg('dbg-auth', `✅ Firebase Auth 연결 정상`);
         } else {
-            dbg('dbg-auth', `❌ 연결 오류: ${err.code}`);
+            resultEl.textContent = `❌ 알 수 없는 오류: ${err.code}\n${err.message}`;
+            resultEl.style.color = '#cc0000';
+            dbg('dbg-auth', `❌ 오류: ${err.code}`);
             console.error('[Debug Test]', err);
         }
     } finally {
         btn.textContent = '연결 테스트';
-        btn.disabled = false;
+        btn.disabled    = false;
     }
 });
 

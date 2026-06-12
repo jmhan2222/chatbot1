@@ -36,7 +36,11 @@
                 <p class="debug-title">🔧 Firebase 연결 상태</p>
                 <p id="dbg-sdk">⏳ SDK 로딩 중...</p>
                 <p id="dbg-auth">⏳ Auth 확인 중...</p>
-                <button type="button" id="debug-btn" class="debug-btn">연결 테스트</button>
+                <div class="debug-test-row">
+                    <input type="email" id="debug-email" placeholder="테스트할 이메일 입력 (선택)" class="debug-email-input">
+                    <button type="button" id="debug-btn" class="debug-btn">연결 테스트</button>
+                </div>
+                <p id="dbg-result" class="dbg-result"></p>
             </div>
 
             <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> 챗봇으로 돌아가기</a>
