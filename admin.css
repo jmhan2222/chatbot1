@@ -1,0 +1,270 @@
+:root {
+    --orange: #FF6600;
+    --orange-dark: #E55A00;
+    --orange-glow: rgba(255, 102, 0, 0.15);
+    --bg: #F5F5F7;
+    --surface: #FFFFFF;
+    --text: #333333;
+    --text-sub: #666666;
+    --border: rgba(0, 0, 0, 0.08);
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --radius: 16px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Sans KR', sans-serif; }
+
+body { background: var(--bg); color: var(--text); min-height: 100vh; }
+
+.hidden { display: none !important; }
+
+/* ── Login ─────────────────────────────────────────── */
+#login-section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.login-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: var(--shadow);
+}
+
+.login-logo {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.login-logo i {
+    font-size: 2.4rem;
+    color: var(--orange);
+    margin-bottom: 12px;
+    display: block;
+}
+
+.login-logo h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+.login-logo p  { font-size: 0.85rem; color: var(--text-sub); }
+
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--text-sub); }
+.field input,
+.field select {
+    width: 100%;
+    height: 44px;
+    border: 1.5px solid #E0E0E0;
+    border-radius: 10px;
+    padding: 0 14px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background: #FAFAFA;
+}
+.field input:focus,
+.field select:focus {
+    border-color: var(--orange);
+    box-shadow: 0 0 0 3px var(--orange-glow);
+    background: white;
+}
+
+#login-form button[type="submit"] {
+    width: 100%;
+    height: 48px;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.2s, transform 0.1s;
+}
+#login-form button[type="submit"]:hover  { background: var(--orange-dark); }
+#login-form button[type="submit"]:active { transform: scale(0.98); }
+#login-form button[type="submit"]:disabled { opacity: 0.6; cursor: default; }
+
+.error-msg { color: #E53935; font-size: 0.85rem; margin-top: 10px; text-align: center; min-height: 20px; }
+
+.back-link {
+    display: block;
+    text-align: center;
+    margin-top: 20px;
+    color: var(--text-sub);
+    font-size: 0.85rem;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+.back-link:hover { color: var(--orange); }
+
+/* ── Admin Header ──────────────────────────────────── */
+.admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: 60px;
+    background: white;
+    border-bottom: 3px solid var(--orange);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.admin-header .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+.admin-header .logo-area i { color: var(--orange); font-size: 1.4rem; }
+
+.header-actions { display: flex; gap: 10px; }
+
+.btn-ghost {
+    height: 36px;
+    padding: 0 14px;
+    border: 1.5px solid #E0E0E0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-sub);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+.btn-ghost:hover { border-color: var(--orange); color: var(--orange); }
+
+/* ── Admin Main ────────────────────────────────────── */
+.admin-main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 28px;
+    box-shadow: var(--shadow);
+}
+
+.card h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.card h2 i { color: var(--orange); }
+
+.upload-row { margin-bottom: 16px; }
+
+/* Drop Zone */
+.drop-zone {
+    border: 2px dashed #D0D0D0;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s;
+    color: var(--text-sub);
+}
+.drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--orange);
+    background: var(--orange-glow);
+    color: var(--orange);
+}
+.drop-zone i { font-size: 2rem; margin-bottom: 12px; display: block; }
+.drop-zone p { font-size: 0.95rem; line-height: 1.6; }
+.drop-zone strong { color: var(--orange); }
+.file-hint { display: block; font-size: 0.78rem; margin-top: 8px; opacity: 0.7; }
+
+/* Upload Status */
+.upload-status {
+    margin-top: 14px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.upload-status.loading { background: #FFF3E0; color: #E65100; }
+.upload-status.success { background: #E8F5E9; color: #2E7D32; }
+.upload-status.error   { background: #FFEBEE; color: #C62828; }
+
+/* Document List */
+.list-loading, .empty-msg {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-sub);
+    font-size: 0.9rem;
+}
+.empty-msg.error { color: #C62828; }
+
+.doc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    animation: fadeIn 0.3s ease;
+}
+.doc-item:last-child { border-bottom: none; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.doc-info { display: flex; align-items: center; gap: 14px; }
+
+.doc-icon {
+    font-size: 1.6rem;
+    width: 36px;
+    text-align: center;
+}
+.fa-file-pdf  { color: #E53935; }
+.fa-file-word { color: #1565C0; }
+
+.doc-name { font-size: 0.95rem; font-weight: 500; margin-bottom: 4px; }
+.doc-meta  { font-size: 0.8rem; color: var(--text-sub); display: flex; align-items: center; gap: 6px; }
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--orange-glow);
+    color: var(--orange);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.btn-delete {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #BDBDBD;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+.btn-delete:hover    { background: #FFEBEE; color: #E53935; }
+.btn-delete:disabled { opacity: 0.4; cursor: default; }

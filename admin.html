@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 페이지 — 제주항공 챗봇</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="admin.css">
+    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+
+    <!-- 로그인 -->
+    <div id="login-section">
+        <div class="login-card">
+            <div class="login-logo">
+                <i class="fas fa-paper-plane"></i>
+                <h1>관리자 로그인</h1>
+                <p>제주항공 객실본부 챗봇 관리</p>
+            </div>
+            <form id="login-form">
+                <div class="field">
+                    <label>이메일</label>
+                    <input type="email" id="email" placeholder="admin@jejuair.net" required autocomplete="email">
+                </div>
+                <div class="field">
+                    <label>비밀번호</label>
+                    <input type="password" id="password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" id="login-btn">로그인</button>
+                <p id="login-error" class="error-msg"></p>
+            </form>
+            <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> 챗봇으로 돌아가기</a>
+        </div>
+    </div>
+
+    <!-- 관리자 대시보드 -->
+    <div id="admin-section" class="hidden">
+        <header class="admin-header">
+            <div class="logo-area">
+                <i class="fas fa-paper-plane"></i>
+                <span>교범 문서 관리</span>
+            </div>
+            <div class="header-actions">
+                <a href="/" class="btn-ghost"><i class="fas fa-comments"></i> 챗봇</a>
+                <button id="logout-btn" class="btn-ghost"><i class="fas fa-sign-out-alt"></i> 로그아웃</button>
+            </div>
+        </header>
+
+        <main class="admin-main">
+
+            <!-- 업로드 카드 -->
+            <section class="card">
+                <h2><i class="fas fa-upload"></i> 문서 업로드</h2>
+                <div class="upload-row">
+                    <div class="field">
+                        <label>카테고리</label>
+                        <select id="category-select">
+                            <option value="업무규정">업무규정</option>
+                            <option value="근태">근태</option>
+                            <option value="안전">안전</option>
+                            <option value="서비스">서비스</option>
+                            <option value="기내방송">기내방송</option>
+                            <option value="공지사항">공지사항</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="drop-zone" class="drop-zone">
+                    <i class="fas fa-file-upload"></i>
+                    <p>PDF 또는 Word(.docx) 파일을<br>드래그하거나 <strong>클릭하여 선택</strong></p>
+                    <span class="file-hint">최대 20MB · PDF, .docx 지원</span>
+                    <input type="file" id="file-input" accept=".pdf,.docx" hidden>
+                </div>
+                <div id="upload-status" class="upload-status hidden"></div>
+            </section>
+
+            <!-- 문서 목록 카드 -->
+            <section class="card">
+                <h2><i class="fas fa-folder-open"></i> 업로드된 문서</h2>
+                <div id="doc-list">
+                    <div class="list-loading"><i class="fas fa-spinner fa-spin"></i> 불러오는 중...</div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script type="module" src="admin.js"></script>
+</body>
+</html>

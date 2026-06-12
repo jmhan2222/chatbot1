@@ -43,23 +43,31 @@ class ChatApp {
         this.userInput.value = '';
         this.userInput.disabled = true;
 
-        const context = this.findRelevantContext(text);
-        const fullPrompt = `[교범 데이터]\n${context}\n\n[사용자 질문]\n${text}`;
-
         let loading;
         try {
             loading = this.showLoading();
 
+            // Firestore RAG 검색 → 없으면 data.js 폴백
+            let context = '';
+            try {
+                const { searchChunks } = await import('./rag.js');
+                const chunks = await searchChunks(text);
+                if (chunks.length > 0) {
+                    context = chunks.map(c => `[출처: ${c.filename}]\n${c.chunk}`).join('\n\n');
+                }
+            } catch { /* Firebase 미설정 시 무시 */ }
+            if (!context) context = this.findRelevantContext(text);
+
             let answer;
             try {
-                answer = await this.getGroqResponse(fullPrompt);
+                answer = await this.getGroqResponse(text, context);
             } catch (firstError) {
                 if (firstError.status === 429) {
                     console.warn('[Groq] 429 한도 초과 → 10초 후 재시도');
                     const loadingText = loading.querySelector('.loading-text');
                     if (loadingText) loadingText.textContent = '잠시 후 답변드릴게요 ⏳';
                     await new Promise(r => setTimeout(r, 10000));
-                    answer = await this.getGroqResponse(fullPrompt);
+                    answer = await this.getGroqResponse(text, context);
                 } else {
                     throw firstError;
                 }
@@ -166,7 +174,11 @@ class ChatApp {
         return "관련 교범 내용을 찾지 못했습니다.";
     }
 
-    async getGroqResponse(userMessage) {
+    async getGroqResponse(userMessage, context = '') {
+        const systemContent = context
+            ? `당신은 제주항공 객실본부 챗봇입니다.\n아래 교범 내용을 참고해서 정확하게 답변하세요.\n교범에 없는 내용은 '교범에서 확인되지 않는 내용입니다'라고 답하세요.\n\n[교범 내용]\n${context}`
+            : `당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다. 정확하고 친절하게 한국어로 답변하세요. 중요한 단어는 **굵게** 표시하세요.`;
+
         try {
             const response = await fetch(CONFIG.API_URL, {
                 method: 'POST',
@@ -177,21 +189,8 @@ class ChatApp {
                 body: JSON.stringify({
                     model: CONFIG.MODEL,
                     messages: [
-                        {
-                            role: 'system',
-                            content: `당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
-제공된 교범 데이터를 기반으로 사용자의 질문에 답변하세요.
-지침:
-1. 교범에 근거하여 정확하고 친절하게 답변하세요.
-2. 관련 내용이 교범에 없을 경우, 일반적인 항공 안전 지식을 제공하되 "정확한 내용은 교범을 재확인하시기 바랍니다"라고 덧붙이세요.
-3. 답변은 5줄 이내로 간결하게 작성하세요.
-4. 중요한 단어는 **굵게** 표시하세요.
-5. 한국어로 답변하세요.`
-                        },
-                        {
-                            role: 'user',
-                            content: userMessage
-                        }
+                        { role: 'system', content: systemContent },
+                        { role: 'user',   content: userMessage }
                     ],
                     max_tokens: 1024
                 })
