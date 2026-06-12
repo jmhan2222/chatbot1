@@ -31,10 +31,6 @@ class ChatApp {
             });
         });
 
-        // API 키 앞 4글자 확인
-        const keyPrefix = this.apiKey.substring(0, 4);
-        console.log(`[API키 확인] 앞 4글자: "${keyPrefix}" → ${keyPrefix.startsWith('AG') ? '✅ AG로 시작' : '⚠️ AG로 시작하지 않음 (확인 필요)'}`);
-
         this.userInput.focus();
     }
 
