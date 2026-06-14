@@ -104,25 +104,37 @@ class ChatApp {
 
     appendMessage(role, text) {
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            hour12: true 
+        const timeStr = now.toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
         });
-        
+
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role}`;
-        
-        // Simple markdown-like replacement
+
         const formattedText = text
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n---\n/g, '<hr>')
             .replace(/\n/g, '<br>');
-        
-        msgDiv.innerHTML = `
-            <div class="bubble">${formattedText}</div>
-            <div class="timestamp">${timeStr}</div>
-        `;
-        
+
+        if (role === 'bot') {
+            msgDiv.innerHTML = `
+                <div class="avatar"><i class="fas fa-plane-departure"></i></div>
+                <div class="msg-content">
+                    <div class="bubble">${formattedText}</div>
+                    <div class="timestamp">${timeStr}</div>
+                </div>
+            `;
+        } else {
+            msgDiv.innerHTML = `
+                <div class="msg-content">
+                    <div class="bubble">${formattedText}</div>
+                    <div class="timestamp">${timeStr}</div>
+                </div>
+            `;
+        }
+
         this.chatContainer.appendChild(msgDiv);
         this.scrollToBottom();
     }
@@ -131,13 +143,16 @@ class ChatApp {
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'message bot loading-container';
         loadingDiv.innerHTML = `
-            <div class="bubble loading-bubble">
-                <div class="loading">
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
+            <div class="avatar"><i class="fas fa-plane-departure"></i></div>
+            <div class="msg-content">
+                <div class="bubble loading-bubble">
+                    <div class="loading">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                    <span class="loading-text">답변을 생성하고 있습니다...</span>
                 </div>
-                <span class="loading-text">답변을 생성하고 있습니다...</span>
             </div>
         `;
         this.chatContainer.appendChild(loadingDiv);
@@ -176,8 +191,32 @@ class ChatApp {
 
     async getGroqResponse(userMessage, context = '') {
         const systemContent = context
-            ? `당신은 제주항공 객실본부 챗봇입니다.\n아래 교범 내용을 참고해서 정확하게 답변하세요.\n교범에 없는 내용은 '교범에서 확인되지 않는 내용입니다'라고 답하세요.\n\n[교범 내용]\n${context}`
-            : `당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다. 정확하고 친절하게 한국어로 답변하세요. 중요한 단어는 **굵게** 표시하세요.`;
+            ? `당신은 제주항공 객실본부 챗봇입니다. 아래 교범 내용을 참고해서 답변하세요.
+교범에 없는 내용은 '교범에서 확인되지 않는 내용입니다'라고 답하세요.
+
+답변은 반드시 다음 구조로 작성하세요:
+
+**핵심 요약**
+질문에 대한 결론을 2~3문장으로 먼저 설명합니다. 독자가 이 부분만 읽어도 핵심을 파악할 수 있어야 합니다.
+
+---
+
+**교범 상세 내용**
+관련 교범 내용을 항목별로 정리합니다. 각 항목은 줄바꿈으로 구분하고, 중요한 키워드는 **굵게** 표시합니다.
+
+[교범 내용]
+${context}`
+            : `당신은 제주항공 객실본부의 승무원 지원용 AI 챗봇입니다.
+
+답변은 반드시 다음 구조로 작성하세요:
+
+**핵심 요약**
+질문에 대한 결론을 2~3문장으로 먼저 설명합니다. 독자가 이 부분만 읽어도 핵심을 파악할 수 있어야 합니다.
+
+---
+
+**상세 내용**
+관련 내용을 항목별로 정리합니다. 중요한 키워드는 **굵게** 표시합니다.`;
 
         try {
             const response = await fetch(CONFIG.API_URL, {

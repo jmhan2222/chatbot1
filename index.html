@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>제주항공 객실본부 통합 챗봇</title>
+    <title>제주항공 객실본부 챗봇</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
@@ -12,19 +12,30 @@
 
     <header>
         <div class="logo-area">
-            <i class="fas fa-paper-plane"></i>
-            <h1>객실본부 통합 챗봇</h1>
+            <div class="logo-icon">
+                <i class="fas fa-plane-departure"></i>
+            </div>
+            <div class="logo-text">
+                <h1>객실본부 챗봇</h1>
+                <span>제주항공 AI 어시스턴트</span>
+            </div>
         </div>
-        <div class="status">온라인</div>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            온라인
+        </div>
     </header>
 
     <main id="chat-container">
         <div class="message bot">
-            <div class="bubble">
-                반갑습니다! **제주항공 객실본부** 안내 챗봇입니다.<br>
-                교범 내용이나 업무 관련 궁금한 점을 입력해 주세요.
+            <div class="avatar"><i class="fas fa-plane-departure"></i></div>
+            <div class="msg-content">
+                <div class="bubble">
+                    반갑습니다! <strong>제주항공 객실본부</strong> AI 어시스턴트입니다.<br>
+                    교범 내용이나 업무 관련 궁금한 점을 입력해 주세요.
+                </div>
+                <div class="timestamp">오전 9:00</div>
             </div>
-            <div class="timestamp">오전 9:00</div>
         </div>
     </main>
 
@@ -38,7 +49,7 @@
             <button class="cat-btn" data-query="최근 공지사항을 알려주세요">공지사항</button>
         </div>
         <div class="input-area">
-            <input type="text" id="user-input" placeholder="질문을 입력하세요..." autocomplete="off">
+            <input type="text" id="user-input" placeholder="궁금한 내용을 입력하세요" autocomplete="off">
             <button id="send-btn" aria-label="전송"><i class="fas fa-arrow-up"></i></button>
         </div>
     </footer>
