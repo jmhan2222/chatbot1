@@ -157,7 +157,7 @@ export async function searchChunks(userQuery) {
             });
             return { ...item, score };
         })
-        .filter(item => item.score > 0)
+        .filter(item => item.score >= 2)   // 청크 본문에 최소 1개 키워드 일치 필요
         .sort((a, b) => b.score - a.score)
         .slice(0, 3);
 }

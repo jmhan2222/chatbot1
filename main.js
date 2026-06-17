@@ -58,6 +58,12 @@ class ChatApp {
             } catch { /* Firebase 미설정 시 무시 */ }
             if (!context) context = this.findRelevantContext(text);
 
+            if (!context) {
+                if (loading) loading.remove();
+                this.appendMessage('bot', '관련 규정을 찾지 못했어요. 더 구체적으로 질문해주시거나 담당 부서에 확인해주세요 😊');
+                return;
+            }
+
             let answer;
             try {
                 answer = await this.getGroqResponse(text, context);
@@ -179,46 +185,39 @@ class ChatApp {
             if (query.includes(item.category)) score += 1;
             if (item.text.includes(query)) score += 5;
             return { ...item, score };
-        }).filter(item => item.score > 0);
+        }).filter(item => item.score >= 3);  // 키워드 최소 1개 본문 매칭(2점) + α 필요
 
         ranked.sort((a, b) => b.score - a.score);
 
         if (ranked.length > 0) {
-            return ranked.slice(0, 2).map(item => 
+            return ranked.slice(0, 2).map(item =>
                 `[출처: ${item.source}]\n${item.text}`
             ).join('\n\n');
         }
-        return "관련 교범 내용을 찾지 못했습니다.";
+        return '';
     }
 
     async getGroqResponse(userMessage, context = '') {
-        const basePrompt = `당신은 제주항공 객실본부 AI 어시스턴트입니다.
-객실승무원들의 든든한 동료처럼 친근하고 자연스럽게 답변하세요.
+        const systemContent = context
+            ? `당신은 제주항공 객실본부 AI 어시스턴트입니다.
 
-답변 원칙:
-- 교범 내용이 있으면 핵심만 자연스럽게 전달하세요. "핵심 요약", "교범 상세 내용" 같은 딱딱한 제목은 쓰지 마세요.
-- 간단한 질문은 1~2문장으로 짧게, 절차가 필요하면 번호를 매겨 단계별로, 여러 항목은 목록으로 정리하세요.
+【환각 방지 - 가장 중요한 원칙】
+- 아래 [교범 내용]에 명시적으로 나온 내용만 답변하세요.
+- [교범 내용]이 질문과 관련이 없으면 절대 추측하거나 만들어내지 마세요.
+- 관련 내용을 찾을 수 없으면 반드시 "관련 규정을 찾지 못했어요. 더 구체적으로 질문해주시거나 담당 부서에 확인해주세요."라고만 답하세요.
+- [교범 내용]에 일부만 언급되어 있다면 그 부분만 정확히 답하고, 나머지는 "추가 사항은 교범에서 확인이 안 되네요"라고 명확히 구분하세요.
+- 절대로 교범에 없는 내용을 그럴듯하게 지어내지 마세요.
+
+【답변 스타일】
+- 간단한 질문은 1~2문장으로, 절차가 필요하면 번호를 매겨 단계별로, 여러 항목은 목록으로.
 - 중요한 키워드나 수치는 **굵게** 강조하세요.
 - 안전·비상·보안 관련 내용은 반드시 진지하고 정확하게 답변하세요.
-- 가끔 이모지와 재치 있는 표현을 섞어 대화를 자연스럽게 만드세요. (예: "교범을 샅샅이 뒤져봤는데요! 🔍", "이건 자신 있게 말씀드릴 수 있어요! 💪")
-- 같은 표현을 반복하지 마세요.`;
-
-        const noContextPrompt = `교범에서 관련 내용을 찾지 못했습니다. 질문의 맥락에 따라 아래처럼 다양하게 안내하세요:
-- 규정·절차 관련: "해당 규정은 아직 교범에 업데이트가 필요한 것 같아요! 담당 부서에 문의해보시는 게 좋을 것 같습니다 😊"
-- 일반적인 질문: "음... 교범에서는 찾기가 어렵네요. 혹시 다른 방식으로 질문해볼까요?"
-- 객실본부와 무관한 질문: "저는 객실본부 전문가라 그건 좀 어렵지만... 비행 관련이라면 뭐든 물어보세요! ✈️"
-질문 내용에 맞게 자연스럽게 선택해서 답변하세요.`;
-
-        const systemContent = context
-            ? `${basePrompt}
-
-아래 교범 내용을 바탕으로 답변하세요. 교범에 없는 내용은 솔직하게 모른다고 하되, 맥락에 맞게 다양한 표현으로 안내하세요.
+- 가끔 이모지와 재치 있는 표현으로 대화를 자연스럽게 만드세요.
+- 같은 표현을 반복하지 마세요.
 
 [교범 내용]
 ${context}`
-            : `${basePrompt}
-
-${noContextPrompt}`;
+            : `당신은 제주항공 객실본부 AI 어시스턴트입니다. 관련 교범 내용이 없습니다. 반드시 "관련 규정을 찾지 못했어요. 더 구체적으로 질문해주시거나 담당 부서에 확인해주세요."라고만 답하세요.`;
 
         try {
             const response = await fetch(CONFIG.API_URL, {
