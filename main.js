@@ -2,7 +2,7 @@ import { manualData } from './data.js';
 
 const CONFIG = {
     GROQ_API_KEY: "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",
-    MODEL: "llama-3.3-70b-versatile",
+    MODEL: "llama-3.1-8b-instant",
     API_URL: "https://api.groq.com/openai/v1/chat/completions"
 };
 
@@ -63,10 +63,11 @@ class ChatApp {
                 answer = await this.getGroqResponse(text, context);
             } catch (firstError) {
                 if (firstError.status === 429) {
-                    console.warn('[Groq] 429 한도 초과 → 10초 후 재시도');
-                    const loadingText = loading.querySelector('.loading-text');
-                    if (loadingText) loadingText.textContent = '잠시 후 답변드릴게요 ⏳';
-                    await new Promise(r => setTimeout(r, 10000));
+                    const waitSec = firstError.retryAfter ?? 15;
+                    console.warn(`[Groq] 429 한도 초과 → ${waitSec}초 후 재시도`);
+                    const loadingText = loading?.querySelector('.loading-text');
+                    if (loadingText) loadingText.textContent = `${waitSec}초 후 자동으로 재시도합니다 ⏳`;
+                    await new Promise(r => setTimeout(r, waitSec * 1000));
                     answer = await this.getGroqResponse(text, context);
                 } else {
                     throw firstError;
@@ -83,7 +84,8 @@ class ChatApp {
             if (error.message.includes("API_KEY_INVALID") || error.message.includes("API key not valid")) {
                 errorMsg = "API 키가 유효하지 않습니다. 관리자에게 문의하세요.";
             } else if (error.status === 429 || error.message.includes("QUOTA_EXCEEDED") || error.message.includes("quota")) {
-                errorMsg = "API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+                const waitSec = error.retryAfter ?? 15;
+                errorMsg = `API 요청 한도를 초과했습니다. **${waitSec}초 후** 다시 시도해주세요.`;
             } else if (error.message.includes("MODEL_NOT_FOUND") || error.message.includes("not found")) {
                 errorMsg = "모델을 찾을 수 없습니다. 관리자에게 문의하세요.";
             } else if (error.name === "TypeError" || error.message.includes("fetch")) {
@@ -235,6 +237,16 @@ ${noContextPrompt}`;
                 })
             });
 
+            // 레이트리밋 헤더 항상 콘솔 출력
+            const rlHeaders = {
+                remaining_req: response.headers.get('x-ratelimit-remaining-requests'),
+                remaining_tok: response.headers.get('x-ratelimit-remaining-tokens'),
+                reset_req:     response.headers.get('x-ratelimit-reset-requests'),
+                reset_tok:     response.headers.get('x-ratelimit-reset-tokens'),
+                retry_after:   response.headers.get('retry-after'),
+            };
+            console.log(`[Groq] model=${CONFIG.MODEL} status=${response.status}`, rlHeaders);
+
             if (!response.ok) {
                 let errorData;
                 try {
@@ -247,6 +259,12 @@ ${noContextPrompt}`;
                 console.error("API 에러 상세:", errorData);
                 const err = new Error(errorData.error?.message || `API 호출 실패 (HTTP ${response.status})`);
                 err.status = response.status;
+                // retry-after 헤더 값을 파싱해 에러 객체에 첨부
+                const rawRetry = rlHeaders.retry_after || rlHeaders.reset_req;
+                if (rawRetry) {
+                    const secs = parseFloat(rawRetry.replace(/[^0-9.]/g, ''));
+                    if (!isNaN(secs)) err.retryAfter = Math.ceil(secs);
+                }
                 throw err;
             }
 
