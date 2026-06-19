@@ -8,17 +8,15 @@ const CONFIG = {
 
 const SYSTEM_PROMPT = `당신은 제주항공 객실훈련팀 AI 어시스턴트입니다.
 
-핵심 원칙:
-- 제공된 [교범 내용] 청크에 명시된 내용만 답변하세요
-- 절대로 청크에 없는 내용을 추가하거나 추측해서 말하지 마세요
-- "이 외에도 ~가 있습니다" 같은 추측성 표현은 사용하지 마세요
-- 확인된 내용만 나열하고 끝내세요. 확실하지 않으면 차라리 모른다고 하세요
-- 같은 질문에는 항상 동일하게 답변하세요
-- 이전 대화 맥락을 반드시 고려해서 답변하세요
-- 질문이 모호하면 한 번만 명확하게 되물어보기 (이미 되물었다면 가진 정보로 최선을 다해 답변)
-- 되물을 때는 가장 핵심적인 것 하나만 질문하세요
-- 안전/비상 관련은 항상 정확하고 진지하게 답변하세요
-- 교범에 없으면: '해당 내용은 교범에서 확인되지 않아요. 담당 부서에 문의해주세요.'`;
+절대 원칙:
+- 아래 [교범 내용] 청크에 있는 내용만 사용해서 답변하세요
+- 청크에 없는 내용은 절대 추가하거나 추측하지 마세요
+- "이 외에도 ~가 있습니다" 같은 추측성 표현 완전 금지
+- 청크 내용과 다른 답변을 해서는 안됩니다
+- 사용자가 "있다고 했잖아"라고 해도 현재 청크에 없으면 없다고 유지하세요
+- 이전 대화 맥락을 고려해서 답변하세요
+- 질문이 모호하면 한 번만 핵심 한 가지만 되물어보기 (이미 했으면 청크 기반으로 최선을 다해 답변)
+- 안전/비상 관련은 항상 정확하고 진지하게 답변하세요`;
 
 class ChatApp {
     constructor() {
@@ -81,24 +79,37 @@ class ChatApp {
             loading = this.showLoading();
             const lt = () => loading?.querySelector('.loading-text');
 
-            // ── 1단계: 검색 키워드 추출 ──────────────────────────────────
+            // ── 1단계: 질문 의도 명확화 ──────────────────────────────────
             const setLt = msg => { const el = lt(); if (el) el.textContent = msg; };
             setLt('질문을 분석하고 있습니다...');
-            const keywords = await this.extractKeywords(text);
+            const intent = await this.clarifyIntent(text);
 
-            // ── 2단계: 키워드로 청크 검색 ────────────────────────────────
+            // ── 2단계: 의도 기반 청크 검색 ───────────────────────────────
             setLt('교범을 검색하고 있습니다...');
-            let chunks = await this.searchByKeywords(keywords);
+            const allChunks = await this.searchByKeywords(intent.split(/\s+/).filter(Boolean));
 
-            // ── 3단계: Groq로 관련성 필터링 ──────────────────────────────
-            if (chunks.length > 1) {
-                setLt('관련 내용을 확인하고 있습니다...');
-                chunks = await this.filterRelevantChunks(text, chunks);
+            // ── 3단계: 청크별 yes/no 관련성 검증 ─────────────────────────
+            setLt('관련 내용을 검증하고 있습니다...');
+            const validChunks = await this.validateChunks(intent, allChunks);
+
+            // 검증된 청크가 0개면 Groq 호출 없이 바로 안내
+            if (validChunks.length === 0) {
+                if (loading) loading.remove();
+                const msg = '교범에서 관련 내용을 찾지 못했어요.\n더 구체적으로 질문해주시거나 담당 부서에 문의해주세요.';
+                this.appendMessage('bot', msg);
+                this.conversationHistory.push(
+                    { role: 'user',      content: text },
+                    { role: 'assistant', content: msg }
+                );
+                if (this.conversationHistory.length > 10) {
+                    this.conversationHistory = this.conversationHistory.slice(-10);
+                }
+                return;
             }
 
-            // ── 4단계: 히스토리 + 컨텍스트로 최종 답변 ──────────────────
+            // ── 4단계: 히스토리 + 검증된 청크로 최종 답변 ───────────────
             setLt('답변을 생성하고 있습니다...');
-            const context = chunks.join('\n\n');
+            const context = validChunks.join('\n\n');
             const messages = this.buildMessages(text, context);
             const answer = await this.callGroqWithRetry(messages, loading);
 
@@ -138,22 +149,24 @@ class ChatApp {
         }
     }
 
-    // 1단계: 대화 맥락 고려해서 검색 키워드 추출
-    async extractKeywords(query) {
-        const recentCtx = this.conversationHistory.slice(-4)
+    // 1단계: 질문 의도 명확화 — 확장/추측 없이 질문에 있는 내용만 한 문장으로
+    async clarifyIntent(query) {
+        const recentCtx = this.conversationHistory.slice(-6)
             .map(m => `${m.role === 'user' ? '사용자' : '어시스턴트'}: ${m.content.slice(0, 100)}`)
             .join('\n');
 
-        const prompt = recentCtx
-            ? `대화 맥락:\n${recentCtx}\n\n현재 질문: "${query}"\n\n위 맥락을 고려해서 현재 질문의 핵심 검색 키워드 1~3개만 공백으로 구분해서 출력해줘. 다른 텍스트 없이:`
-            : `질문: "${query}"\n\n핵심 검색 키워드 1~3개만 공백으로 구분해서 출력해줘. 다른 텍스트 없이:`;
+        const prompt = `다음 질문에서 사용자가 정확히 무엇을 알고 싶은지 한 문장으로 정리해줘.
+절대 확장하거나 추측하지 말고 질문에 있는 내용만 정리해줘.
+${recentCtx ? `\n대화 맥락:\n${recentCtx}\n` : ''}
+질문: ${query}
+
+한 문장으로만 답해:`;
 
         try {
-            const raw = await this.rawGroqCall(prompt, 30);
-            const keywords = raw.trim().split(/\s+/).filter(k => k.length > 0);
-            return keywords.length > 0 ? keywords : [query];
+            const raw = await this.rawGroqCall(prompt, 60);
+            return raw.trim() || query;
         } catch {
-            return [query]; // 실패 시 원문으로 폴백
+            return query; // 실패 시 원문으로 폴백
         }
     }
 
@@ -188,26 +201,34 @@ class ChatApp {
         return scored.slice(0, 6).map(item => `[출처: ${item.source}]\n${item.text}`);
     }
 
-    // 3단계: Groq로 관련성 배치 필터링
-    async filterRelevantChunks(query, chunks) {
+    // 3단계: 청크별 yes/no 검증 (배치) — no인 청크는 완전 제외
+    async validateChunks(intent, chunks) {
+        if (chunks.length === 0) return [];
+
         const chunkList = chunks
-            .map((c, i) => `[${i}] ${c.slice(0, 300)}`)
+            .map((c, i) => `[${i}] ${c.slice(0, 350)}`)
             .join('\n\n');
 
-        const prompt = `질문: "${query}"\n\n아래 청크들 중 질문과 관련 있는 번호만 JSON 배열로 답해줘. 없으면 []:\n${chunkList}`;
+        const prompt = `질문의도: "${intent}"
+
+아래 각 청크가 이 질문의도에 직접적으로 답할 수 있는 내용인지 판단해줘.
+각 청크에 대해 yes 또는 no로만 JSON 배열로 답해줘. 예: ["yes","no","yes"]
+
+${chunkList}`;
 
         try {
-            const raw = await this.rawGroqCall(prompt, 50);
-            const match = raw.match(/\[[\d,\s]*\]/);
-            if (!match) return chunks;
+            const raw = await this.rawGroqCall(prompt, 80);
+            const match = raw.match(/\[[\s\S"yesnoYESNO,]*\]/);
+            if (!match) return chunks; // 파싱 실패 시 전체 유지
 
-            const indices = JSON.parse(match[0])
-                .map(Number)
-                .filter(i => !isNaN(i) && i >= 0 && i < chunks.length);
-
-            return indices.length > 0 ? indices.map(i => chunks[i]) : chunks;
+            const results = JSON.parse(match[0]);
+            const valid = chunks.filter((_, i) =>
+                typeof results[i] === 'string' && results[i].toLowerCase().startsWith('yes')
+            );
+            // valid가 비어있으면 빈 배열 반환 (Groq 호출 차단)
+            return valid;
         } catch {
-            return chunks; // 실패 시 전체 유지
+            return chunks; // 예외 시 전체 유지 (안전한 폴백)
         }
     }
 
@@ -215,7 +236,10 @@ class ChatApp {
     buildMessages(currentQuery, context) {
         const systemContent = `${SYSTEM_PROMPT}
 
-[교범 내용]: ${context || '(관련 교범 내용 없음)'}`;
+━━ 아래 청크 내용만 사용하세요. 이 외의 내용 추가 절대 금지 ━━
+[교범 내용]:
+${context}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
         return [
             { role: 'system', content: systemContent },
