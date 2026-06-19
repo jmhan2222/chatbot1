@@ -13,6 +13,8 @@ class ChatApp {
         this.sendBtn = document.getElementById('send-btn');
         this.apiKey = CONFIG.GROQ_API_KEY;
         this.isTyping = false;
+        this.pendingSelections = null; // [{label, category, context}]
+        this.pendingQuery = null;
 
         this.init();
     }
@@ -45,43 +47,67 @@ class ChatApp {
 
         let loading;
         try {
+            // 카테고리 선택 대기 중일 때
+            if (this.pendingSelections) {
+                const selected = this.resolveSelection(text);
+                if (selected) {
+                    const originalQuery = this.pendingQuery;
+                    this.pendingSelections = null;
+                    this.pendingQuery = null;
+                    loading = this.showLoading();
+                    const answer = await this.callGroqWithRetry(originalQuery, selected.context, loading);
+                    if (loading) loading.remove();
+                    this.appendMessage('bot', answer);
+                    return;
+                }
+                // 선택지 외 새 질문 → 대기 상태 초기화 후 새 질문으로 처리
+                this.pendingSelections = null;
+                this.pendingQuery = null;
+            }
+
             loading = this.showLoading();
 
             // Firestore RAG 검색 → 없으면 data.js 폴백
-            let context = '';
+            let chunks = [];
             try {
                 const { searchChunks } = await import('./rag.js');
-                const chunks = await searchChunks(text);
-                if (chunks.length > 0) {
-                    context = chunks.map(c => `[출처: ${c.filename}]\n${c.chunk}`).join('\n\n');
+                const ragChunks = await searchChunks(text);
+                if (ragChunks.length > 0) {
+                    chunks = ragChunks.map(c => ({
+                        label: c.filename,
+                        category: c.filename,
+                        context: `[출처: ${c.filename}]\n${c.chunk}`
+                    }));
                 }
             } catch { /* Firebase 미설정 시 무시 */ }
-            if (!context) context = this.findRelevantContext(text);
 
-            if (!context) {
+            if (chunks.length === 0) {
+                chunks = this.findRelevantChunks(text);
+            }
+
+            if (chunks.length === 0) {
                 if (loading) loading.remove();
                 this.appendMessage('bot', '해당 내용은 교범에서 확인되지 않아요.\n담당 부서에 직접 문의해주세요.');
                 return;
             }
 
-            let answer;
-            try {
-                answer = await this.getGroqResponse(text, context);
-            } catch (firstError) {
-                if (firstError.status === 429) {
-                    const waitSec = firstError.retryAfter ?? 15;
-                    console.warn(`[Groq] 429 한도 초과 → ${waitSec}초 후 재시도`);
-                    const loadingText = loading?.querySelector('.loading-text');
-                    if (loadingText) loadingText.textContent = `${waitSec}초 후 자동으로 재시도합니다 ⏳`;
-                    await new Promise(r => setTimeout(r, waitSec * 1000));
-                    answer = await this.getGroqResponse(text, context);
-                } else {
-                    throw firstError;
-                }
+            // 카테고리 수에 따라 분기
+            const categories = [...new Set(chunks.map(c => c.category))];
+
+            if (categories.length === 1) {
+                // 단일 카테고리 → 바로 답변
+                const context = chunks.map(c => c.context).join('\n\n');
+                const answer = await this.callGroqWithRetry(text, context, loading);
+                if (loading) loading.remove();
+                this.appendMessage('bot', answer);
+            } else {
+                // 복수 카테고리 → 선택지 제시
+                if (loading) loading.remove();
+                this.pendingSelections = chunks;
+                this.pendingQuery = text;
+                this.appendMessage('bot', this.buildSelectionMenu(text, chunks));
             }
 
-            if (loading) loading.remove();
-            this.appendMessage('bot', answer);
         } catch (error) {
             console.error("Chat Error:", error);
             if (loading) loading.remove();
@@ -108,6 +134,43 @@ class ChatApp {
             this.userInput.focus();
             this.scrollToBottom();
         }
+    }
+
+    // 429 재시도 포함 Groq 호출 래퍼
+    async callGroqWithRetry(userMessage, context, loading) {
+        try {
+            return await this.getGroqResponse(userMessage, context);
+        } catch (firstError) {
+            if (firstError.status === 429) {
+                const waitSec = firstError.retryAfter ?? 15;
+                console.warn(`[Groq] 429 한도 초과 → ${waitSec}초 후 재시도`);
+                const loadingText = loading?.querySelector('.loading-text');
+                if (loadingText) loadingText.textContent = `${waitSec}초 후 자동으로 재시도합니다 ⏳`;
+                await new Promise(r => setTimeout(r, waitSec * 1000));
+                return await this.getGroqResponse(userMessage, context);
+            }
+            throw firstError;
+        }
+    }
+
+    // 선택지 번호 또는 키워드로 항목 매핑
+    resolveSelection(text) {
+        const trimmed = text.trim();
+        const num = parseInt(trimmed);
+        if (!isNaN(num) && num >= 1 && num <= this.pendingSelections.length) {
+            return this.pendingSelections[num - 1];
+        }
+        const lower = trimmed.toLowerCase();
+        return this.pendingSelections.find(s =>
+            s.label.toLowerCase().includes(lower) || lower.includes(s.label.toLowerCase())
+        ) || null;
+    }
+
+    // 카테고리 선택 메뉴 텍스트 생성
+    buildSelectionMenu(query, chunks) {
+        const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣'];
+        const options = chunks.map((c, i) => `${nums[i]} ${c.label}`).join('\n');
+        return `"${query}"과 관련해서 아래 항목들이 있어요. 어떤 내용이 궁금하신가요? 😊\n\n${options}`;
     }
 
     appendMessage(role, text) {
@@ -175,8 +238,8 @@ class ChatApp {
         });
     }
 
-    findRelevantContext(query) {
-        // Simple search: rank by keyword matches
+    // 관련 청크 검색 — 카테고리별로 묶어 배열로 반환
+    findRelevantChunks(query) {
         const ranked = manualData.map(item => {
             let score = 0;
             item.keywords.forEach(kw => {
@@ -185,16 +248,29 @@ class ChatApp {
             if (query.includes(item.category)) score += 1;
             if (item.text.includes(query)) score += 5;
             return { ...item, score };
-        }).filter(item => item.score >= 5);  // 최소 2개 키워드 매칭 or 본문 직접 포함 수준 이상만 허용
+        }).filter(item => item.score >= 5);
 
-        ranked.sort((a, b) => b.score - a.score);
+        // 점수 내림차순, 동점 시 source 알파벳순으로 항상 동일한 순서 보장
+        ranked.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return (a.source || '').localeCompare(b.source || '');
+        });
 
-        if (ranked.length > 0) {
-            return ranked.slice(0, 2).map(item =>
-                `[출처: ${item.source}]\n${item.text}`
-            ).join('\n\n');
+        // 카테고리별 최상위 1개씩, 최대 4개
+        const seen = new Set();
+        const result = [];
+        for (const item of ranked) {
+            if (!seen.has(item.category)) {
+                seen.add(item.category);
+                result.push({
+                    label: item.source || item.category,
+                    category: item.category,
+                    context: `[출처: ${item.source}]\n${item.text}`
+                });
+            }
+            if (result.length >= 4) break;
         }
-        return '';
+        return result;
     }
 
     async getGroqResponse(userMessage, context = '') {
@@ -226,11 +302,12 @@ class ChatApp {
                         { role: 'system', content: systemContent },
                         { role: 'user',   content: userMessage }
                     ],
-                    max_tokens: 1024
+                    max_tokens: 1024,
+                    temperature: 0,
+                    seed: 0
                 })
             });
 
-            // 레이트리밋 헤더 항상 콘솔 출력
             const rlHeaders = {
                 remaining_req: response.headers.get('x-ratelimit-remaining-requests'),
                 remaining_tok: response.headers.get('x-ratelimit-remaining-tokens'),
@@ -252,7 +329,6 @@ class ChatApp {
                 console.error("API 에러 상세:", errorData);
                 const err = new Error(errorData.error?.message || `API 호출 실패 (HTTP ${response.status})`);
                 err.status = response.status;
-                // retry-after 헤더 값을 파싱해 에러 객체에 첨부
                 const rawRetry = rlHeaders.retry_after || rlHeaders.reset_req;
                 if (rawRetry) {
                     const secs = parseFloat(rawRetry.replace(/[^0-9.]/g, ''));
