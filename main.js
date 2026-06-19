@@ -13,8 +13,11 @@ class ChatApp {
         this.sendBtn = document.getElementById('send-btn');
         this.apiKey = CONFIG.GROQ_API_KEY;
         this.isTyping = false;
-        this.pendingSelections = null; // [{label, context}]
-        this.pendingQuery = null;
+
+        // 선택 대기 상태 관리
+        this.pendingChunks = {};        // { 1: context, 2: context, ... }
+        this.waitingForSelection = false;
+        this.originalQuestion = '';
 
         this.init();
     }
@@ -35,6 +38,12 @@ class ChatApp {
         this.userInput.focus();
     }
 
+    clearPendingState() {
+        this.pendingChunks = {};
+        this.waitingForSelection = false;
+        this.originalQuestion = '';
+    }
+
     async handleSend() {
         const text = this.userInput.value.trim();
         if (!text || this.isTyping) return;
@@ -47,24 +56,35 @@ class ChatApp {
 
         let loading;
         try {
-            // 주제 선택 대기 중일 때
-            if (this.pendingSelections) {
-                const selected = this.resolveSelection(text);
-                if (selected) {
-                    const originalQuery = this.pendingQuery;
-                    this.pendingSelections = null;
-                    this.pendingQuery = null;
+            // ── 선택 대기 중 ──────────────────────────────────────────
+            if (this.waitingForSelection) {
+                const trimmed = text.trim();
+                const num = parseInt(trimmed);
+                const maxNum = Object.keys(this.pendingChunks).length;
+
+                if (!isNaN(num) && num >= 1 && num <= maxNum) {
+                    // 유효한 번호 선택
+                    const context = this.pendingChunks[num];
+                    const originalQuery = this.originalQuestion;
+                    this.clearPendingState();
                     loading = this.showLoading();
-                    const answer = await this.callGroqWithRetry(originalQuery, selected.context, loading);
+                    const answer = await this.callGroqWithRetry(originalQuery, context, loading);
                     if (loading) loading.remove();
                     this.appendMessage('bot', answer);
                     return;
                 }
-                // 선택지 외 새 질문 → 대기 상태 초기화 후 새 질문으로 처리
-                this.pendingSelections = null;
-                this.pendingQuery = null;
+
+                if (!isNaN(num)) {
+                    // 숫자이지만 범위 밖
+                    this.appendMessage('bot', `1~${maxNum} 중에서 선택해주세요.`);
+                    return; // 대기 상태 유지
+                }
+
+                // 숫자가 아닌 새 질문 → 대기 상태 초기화 후 새 질문 처리
+                this.clearPendingState();
             }
 
+            // ── 새 질문 처리 ─────────────────────────────────────────
             loading = this.showLoading();
 
             // Firestore RAG 검색 → 없으면 data.js 폴백
@@ -103,19 +123,23 @@ class ChatApp {
 
             const topics = await this.classifyChunks(text, chunks);
 
-            if (!topics || topics.length <= 1) {
+            if (!topics || topics.length < 2) {
                 // 분류 실패 또는 단일 주제 → 전체 컨텍스트로 바로 답변
                 const context = chunks.map(c => c.context).join('\n\n');
                 const answer = await this.callGroqWithRetry(text, context, loading);
                 if (loading) loading.remove();
                 this.appendMessage('bot', answer);
-            } else {
-                // 복수 주제 → 선택지 제시
-                if (loading) loading.remove();
-                this.pendingSelections = topics;
-                this.pendingQuery = text;
-                this.appendMessage('bot', this.buildSelectionMenu(text, topics));
+                return;
             }
+
+            // 주제별 청크를 pendingChunks에 저장 후 선택지 제시
+            if (loading) loading.remove();
+            topics.forEach((t, i) => {
+                this.pendingChunks[i + 1] = t.context;
+            });
+            this.waitingForSelection = true;
+            this.originalQuestion = text;
+            this.appendMessage('bot', this.buildSelectionMenu(text, topics));
 
         } catch (error) {
             console.error("Chat Error:", error);
@@ -145,7 +169,7 @@ class ChatApp {
         }
     }
 
-    // 청크 내용을 Groq로 분석해 주제별로 그룹핑
+    // 청크 내용을 Groq로 분석해 주제별 그룹핑
     async classifyChunks(query, chunks) {
         const chunkList = chunks
             .map((c, i) => `[${i}] ${c.context.slice(0, 400)}`)
@@ -185,13 +209,17 @@ ${chunkList}
             const groups = JSON.parse(match[0]);
             if (!Array.isArray(groups) || groups.length < 2) return null;
 
-            return groups.map(g => ({
-                label: g.topic,
+            const topics = groups.map(g => ({
+                label: String(g.topic || '').trim(),
+                // Number() 로 강제 변환해 Groq가 문자열 인덱스를 반환해도 처리
                 context: (g.indices || [])
-                    .filter(i => typeof i === 'number' && i >= 0 && i < chunks.length)
+                    .map(Number)
+                    .filter(i => !isNaN(i) && i >= 0 && i < chunks.length)
                     .map(i => chunks[i].context)
                     .join('\n\n')
-            })).filter(g => g.context);
+            })).filter(t => t.label && t.context);
+
+            return topics.length >= 2 ? topics : null;
 
         } catch {
             return null;
@@ -213,19 +241,6 @@ ${chunkList}
             }
             throw firstError;
         }
-    }
-
-    // 선택지 번호 또는 키워드로 항목 매핑
-    resolveSelection(text) {
-        const trimmed = text.trim();
-        const num = parseInt(trimmed);
-        if (!isNaN(num) && num >= 1 && num <= this.pendingSelections.length) {
-            return this.pendingSelections[num - 1];
-        }
-        const lower = trimmed.toLowerCase();
-        return this.pendingSelections.find(s =>
-            s.label.toLowerCase().includes(lower) || lower.includes(s.label.toLowerCase())
-        ) || null;
     }
 
     // 주제 선택 메뉴 텍스트 생성
@@ -300,7 +315,7 @@ ${chunkList}
         });
     }
 
-    // 관련 청크 검색 — 점수순 정렬, 최대 6개 반환
+    // 관련 청크 검색 — 점수순 상위 6개 반환
     findRelevantChunks(query) {
         const ranked = manualData.map(item => {
             let score = 0;
@@ -312,7 +327,6 @@ ${chunkList}
             return { ...item, score };
         }).filter(item => item.score >= 5);
 
-        // 점수 내림차순, 동점 시 source 알파벳순으로 항상 동일한 순서 보장
         ranked.sort((a, b) => {
             if (b.score !== a.score) return b.score - a.score;
             return (a.source || '').localeCompare(b.source || '');
