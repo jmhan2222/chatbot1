@@ -12,8 +12,11 @@ const SYSTEM_PROMPT = `당신은 제주항공 객실훈련팀 AI 어시스턴트
 - 아래 [교범 내용] 청크에 있는 내용만 사용해서 답변하세요
 - 청크에 없는 내용은 절대 추가하거나 추측하지 마세요
 - "이 외에도 ~가 있습니다" 같은 추측성 표현 완전 금지
-- 청크 내용과 다른 답변을 해서는 안됩니다
+- 교범에 없다고 답변한 내용은 사용자가 재차 물어봐도 절대 번복하지 마세요
+- 사용자가 화내거나 재질문해도 교범 청크에 없으면 없는 것입니다
+- 단, 사용자가 새로운 키워드를 제시하면 그 키워드로 다시 검색합니다
 - 사용자가 "있다고 했잖아"라고 해도 현재 청크에 없으면 없다고 유지하세요
+- 교범 내용을 완전하게 제공하세요. 요약하거나 중간에 자르지 마세요
 - 이전 대화 맥락을 고려해서 답변하세요
 - 질문이 모호하면 한 번만 핵심 한 가지만 되물어보기 (이미 했으면 청크 기반으로 최선을 다해 답변)
 - 안전/비상 관련은 항상 정확하고 진지하게 답변하세요`;
@@ -26,10 +29,9 @@ class ChatApp {
         this.apiKey = CONFIG.GROQ_API_KEY;
         this.isTyping = false;
 
-        // 최근 5쌍(10개) 대화 히스토리 — Groq messages 배열로 전달
-        this.conversationHistory = [];
-        // 카테고리 버튼 클릭 시 세팅, 직접 입력 수정 시 해제
+        this.conversationHistory = []; // 최근 5쌍(10개) 대화 히스토리
         this.pendingCategoryName = null;
+        this.pendingList = null; // { items: [{label, context}], question: '' }
 
         this.init();
     }
@@ -48,7 +50,6 @@ class ChatApp {
             });
         });
 
-        // 사용자가 직접 텍스트 수정 시 카테고리 플래그 해제
         this.userInput.addEventListener('input', () => {
             this.pendingCategoryName = null;
         });
@@ -68,7 +69,7 @@ class ChatApp {
 
         let loading;
         try {
-            // ── 카테고리 버튼 클릭 → 검색 없이 안내만 ──────────────────
+            // ── 카테고리 버튼 → 안내만 ───────────────────────────────────
             if (this.pendingCategoryName) {
                 const catName = this.pendingCategoryName;
                 this.pendingCategoryName = null;
@@ -76,11 +77,64 @@ class ChatApp {
                 return;
             }
 
+            // ── 목록 선택 대기 중 ─────────────────────────────────────────
+            if (this.pendingList) {
+                const num = parseInt(text.trim());
+                const max = this.pendingList.items.length;
+
+                if (!isNaN(num) && num >= 1 && num <= max) {
+                    const item = this.pendingList.items[num - 1];
+                    const originalQ = this.pendingList.originalQuestion;
+                    this.pendingList = null;
+                    loading = this.showLoading();
+                    const setLt = msg => { const el = loading?.querySelector('.loading-text'); if (el) el.textContent = msg; };
+                    setLt('답변을 생성하고 있습니다...');
+                    const messages = this.buildMessages(`${originalQ} - ${item.label} 관련 상세 내용`, item.context);
+                    const answer = await this.callGroqWithRetry(messages, loading);
+                    if (loading) loading.remove();
+                    const clean = this.deduplicateAnswer(answer);
+                    this.appendMessage('bot', clean);
+                    this.conversationHistory.push(
+                        { role: 'user',      content: text },
+                        { role: 'assistant', content: clean }
+                    );
+                    if (this.conversationHistory.length > 10) this.conversationHistory = this.conversationHistory.slice(-10);
+                    return;
+                }
+
+                if (!isNaN(num)) {
+                    this.appendMessage('bot', `1~${max} 중에서 골라주세요! 😊`);
+                    return;
+                }
+
+                // 새 질문 → 목록 상태 초기화 후 일반 흐름
+                this.pendingList = null;
+            }
+
             loading = this.showLoading();
-            const lt = () => loading?.querySelector('.loading-text');
+            const setLt = msg => { const el = loading?.querySelector('.loading-text'); if (el) el.textContent = msg; };
+
+            // ── 교관 종류 목록 쿼리 감지 ─────────────────────────────────
+            if (this.isListQuery(text)) {
+                setLt('교관 종류를 검색하고 있습니다...');
+                const listResult = await this.handleListQuery(text, loading);
+                if (listResult) {
+                    if (loading) loading.remove();
+                    this.appendMessage('bot', listResult.message);
+                    if (listResult.items) {
+                        this.pendingList = { items: listResult.items, originalQuestion: text };
+                    }
+                    this.conversationHistory.push(
+                        { role: 'user',      content: text },
+                        { role: 'assistant', content: listResult.message }
+                    );
+                    if (this.conversationHistory.length > 10) this.conversationHistory = this.conversationHistory.slice(-10);
+                    return;
+                }
+                // 목록 검색 실패 시 일반 흐름으로 계속
+            }
 
             // ── 1단계: 질문 의도 명확화 ──────────────────────────────────
-            const setLt = msg => { const el = lt(); if (el) el.textContent = msg; };
             setLt('질문을 분석하고 있습니다...');
             const intent = await this.clarifyIntent(text);
 
@@ -88,11 +142,11 @@ class ChatApp {
             setLt('교범을 검색하고 있습니다...');
             const allChunks = await this.searchByKeywords(intent.split(/\s+/).filter(Boolean));
 
-            // ── 3단계: 청크별 yes/no 관련성 검증 ─────────────────────────
+            // ── 3단계: 중복 제거 후 yes/no 검증 ──────────────────────────
             setLt('관련 내용을 검증하고 있습니다...');
-            const validChunks = await this.validateChunks(intent, allChunks);
+            const dedupedChunks = this.deduplicateChunks(allChunks);
+            const validChunks = await this.validateChunks(intent, dedupedChunks);
 
-            // 검증된 청크가 0개면 Groq 호출 없이 바로 안내
             if (validChunks.length === 0) {
                 if (loading) loading.remove();
                 const msg = '교범에서 관련 내용을 찾지 못했어요.\n더 구체적으로 질문해주시거나 담당 부서에 문의해주세요.';
@@ -101,29 +155,25 @@ class ChatApp {
                     { role: 'user',      content: text },
                     { role: 'assistant', content: msg }
                 );
-                if (this.conversationHistory.length > 10) {
-                    this.conversationHistory = this.conversationHistory.slice(-10);
-                }
+                if (this.conversationHistory.length > 10) this.conversationHistory = this.conversationHistory.slice(-10);
                 return;
             }
 
-            // ── 4단계: 히스토리 + 검증된 청크로 최종 답변 ───────────────
+            // ── 4단계: 최종 답변 생성 ────────────────────────────────────
             setLt('답변을 생성하고 있습니다...');
             const context = validChunks.join('\n\n');
             const messages = this.buildMessages(text, context);
-            const answer = await this.callGroqWithRetry(messages, loading);
+            const rawAnswer = await this.callGroqWithRetry(messages, loading);
+            const answer = this.deduplicateAnswer(rawAnswer);
 
             if (loading) loading.remove();
             this.appendMessage('bot', answer);
 
-            // 히스토리 추가 — 최근 5쌍(10개) 유지
             this.conversationHistory.push(
                 { role: 'user',      content: text },
                 { role: 'assistant', content: answer }
             );
-            if (this.conversationHistory.length > 10) {
-                this.conversationHistory = this.conversationHistory.slice(-10);
-            }
+            if (this.conversationHistory.length > 10) this.conversationHistory = this.conversationHistory.slice(-10);
 
         } catch (error) {
             console.error("Chat Error:", error);
@@ -149,7 +199,55 @@ class ChatApp {
         }
     }
 
-    // 1단계: 질문 의도 명확화 — 확장/추측 없이 질문에 있는 내용만 한 문장으로
+    // 교관 종류 목록 쿼리 감지
+    isListQuery(text) {
+        return /교관.*(종류|목록|뭐가|어떤|있어|있나|알려|뭐뭐|전체|다)/i.test(text)
+            || /어떤.*교관/i.test(text)
+            || /교관.*(list|리스트)/i.test(text);
+    }
+
+    // 교관 목록 전용 처리 — 모든 교관 청크 수집 후 Groq로 목록 추출
+    async handleListQuery(text, loading) {
+        const keywords = ['교관', '강사'];
+        const allChunks = await this.searchByKeywords(keywords);
+        const dedupedChunks = this.deduplicateChunks(allChunks);
+
+        if (dedupedChunks.length === 0) return null;
+
+        // Groq로 청크에서 교관 종류 추출
+        const chunkText = dedupedChunks.join('\n\n').slice(0, 3000);
+        const prompt = `다음 교범 내용에서 교관/강사 종류를 모두 찾아서 목록으로 나열해줘.
+교범에 명시된 것만, 추측하지 말고, 짧은 이름으로만.
+JSON 배열로 답해줘: ["기내방송 교관", "서비스 교관", ...]
+
+교범 내용:
+${chunkText}`;
+
+        try {
+            const raw = await this.rawGroqCall(prompt, 150);
+            const match = raw.match(/\[[\s\S"가-힣a-zA-Z ,]*\]/);
+            if (!match) return null;
+
+            const names = JSON.parse(match[0]).filter(n => typeof n === 'string' && n.trim());
+            if (names.length === 0) return null;
+
+            const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣'];
+            const list = names.map((n, i) => `${nums[i] || `${i+1}.`} ${n}`).join('\n');
+            const message = `교관 종류는 다음과 같아요 😊\n\n${list}\n\n어떤 교관에 대해 더 알고 싶으세요?`;
+
+            // 각 교관 이름으로 청크 매핑
+            const items = names.map(name => ({
+                label: name,
+                context: dedupedChunks.filter(c => c.includes(name)).join('\n\n') || dedupedChunks[0]
+            }));
+
+            return { message, items };
+        } catch {
+            return null;
+        }
+    }
+
+    // 1단계: 질문 의도 명확화
     async clarifyIntent(query) {
         const recentCtx = this.conversationHistory.slice(-6)
             .map(m => `${m.role === 'user' ? '사용자' : '어시스턴트'}: ${m.content.slice(0, 100)}`)
@@ -166,13 +264,12 @@ ${recentCtx ? `\n대화 맥락:\n${recentCtx}\n` : ''}
             const raw = await this.rawGroqCall(prompt, 60);
             return raw.trim() || query;
         } catch {
-            return query; // 실패 시 원문으로 폴백
+            return query;
         }
     }
 
     // 2단계: 키워드로 manualData + Firestore 검색
     async searchByKeywords(keywords) {
-        // Firestore RAG 시도
         try {
             const { searchChunks } = await import('./rag.js');
             const ragChunks = await searchChunks(keywords.join(' '));
@@ -181,7 +278,6 @@ ${recentCtx ? `\n대화 맥락:\n${recentCtx}\n` : ''}
             }
         } catch { /* Firebase 미설정 시 무시 */ }
 
-        // data.js 폴백 — 키워드 포함 여부로 점수화
         const scored = manualData.map(item => {
             let score = 0;
             keywords.forEach(kw => {
@@ -198,10 +294,28 @@ ${recentCtx ? `\n대화 맥락:\n${recentCtx}\n` : ''}
             b.score - a.score || (a.source || '').localeCompare(b.source || '')
         );
 
-        return scored.slice(0, 6).map(item => `[출처: ${item.source}]\n${item.text}`);
+        return scored.slice(0, 8).map(item => `[출처: ${item.source}]\n${item.text}`);
     }
 
-    // 3단계: 청크별 yes/no 검증 (배치) — no인 청크는 완전 제외
+    // 중복 청크 제거 — 단어 기준 90% 이상 겹치는 청크는 1개만 유지
+    deduplicateChunks(chunks) {
+        const result = [];
+        for (const chunk of chunks) {
+            const isDup = result.some(existing => this.chunkSimilarity(existing, chunk) >= 0.9);
+            if (!isDup) result.push(chunk);
+        }
+        return result;
+    }
+
+    chunkSimilarity(a, b) {
+        const wordsA = new Set(a.split(/\s+/));
+        const wordsB = new Set(b.split(/\s+/));
+        const intersection = [...wordsA].filter(w => wordsB.has(w)).length;
+        const smaller = Math.min(wordsA.size, wordsB.size);
+        return smaller === 0 ? 0 : intersection / smaller;
+    }
+
+    // 3단계: 청크별 yes/no 검증 (배치)
     async validateChunks(intent, chunks) {
         if (chunks.length === 0) return [];
 
@@ -219,20 +333,33 @@ ${chunkList}`;
         try {
             const raw = await this.rawGroqCall(prompt, 80);
             const match = raw.match(/\[[\s\S"yesnoYESNO,]*\]/);
-            if (!match) return chunks; // 파싱 실패 시 전체 유지
+            if (!match) return chunks;
 
             const results = JSON.parse(match[0]);
             const valid = chunks.filter((_, i) =>
                 typeof results[i] === 'string' && results[i].toLowerCase().startsWith('yes')
             );
-            // valid가 비어있으면 빈 배열 반환 (Groq 호출 차단)
             return valid;
         } catch {
-            return chunks; // 예외 시 전체 유지 (안전한 폴백)
+            return chunks;
         }
     }
 
-    // messages 배열 구성 — 시스템 프롬프트 + 히스토리 + 현재 질문
+    // 답변 내 중복 문장 제거
+    deduplicateAnswer(text) {
+        const lines = text.split('\n');
+        const seen = new Set();
+        const deduped = lines.filter(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return true; // 빈 줄 유지
+            if (seen.has(trimmed)) return false;
+            seen.add(trimmed);
+            return true;
+        });
+        return deduped.join('\n');
+    }
+
+    // messages 배열 구성
     buildMessages(currentQuery, context) {
         const systemContent = `${SYSTEM_PROMPT}
 
@@ -243,12 +370,12 @@ ${context}
 
         return [
             { role: 'system', content: systemContent },
-            ...this.conversationHistory.slice(-8), // 최근 4쌍
+            ...this.conversationHistory.slice(-8),
             { role: 'user', content: currentQuery }
         ];
     }
 
-    // 경량 Groq 호출 (키워드 추출 / 관련성 필터링용)
+    // 경량 Groq 호출
     async rawGroqCall(prompt, maxTokens = 100) {
         const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
@@ -281,14 +408,14 @@ ${context}
                 body: JSON.stringify({
                     model: CONFIG.MODEL,
                     messages,
-                    max_tokens: 1024,
+                    max_tokens: 2048,
                     temperature: 0,
                     seed: 0
                 })
             });
 
-            const retryAfter  = response.headers.get('retry-after');
-            const resetReq    = response.headers.get('x-ratelimit-reset-requests');
+            const retryAfter = response.headers.get('retry-after');
+            const resetReq   = response.headers.get('x-ratelimit-reset-requests');
             console.log(`[Groq] status=${response.status}`);
 
             if (!response.ok) {
