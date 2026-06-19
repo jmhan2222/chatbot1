@@ -13,7 +13,7 @@ class ChatApp {
         this.sendBtn = document.getElementById('send-btn');
         this.apiKey = CONFIG.GROQ_API_KEY;
         this.isTyping = false;
-        this.pendingSelections = null; // [{label, category, context}]
+        this.pendingSelections = null; // [{label, context}]
         this.pendingQuery = null;
 
         this.init();
@@ -47,7 +47,7 @@ class ChatApp {
 
         let loading;
         try {
-            // 카테고리 선택 대기 중일 때
+            // 주제 선택 대기 중일 때
             if (this.pendingSelections) {
                 const selected = this.resolveSelection(text);
                 if (selected) {
@@ -74,8 +74,6 @@ class ChatApp {
                 const ragChunks = await searchChunks(text);
                 if (ragChunks.length > 0) {
                     chunks = ragChunks.map(c => ({
-                        label: c.filename,
-                        category: c.filename,
                         context: `[출처: ${c.filename}]\n${c.chunk}`
                     }));
                 }
@@ -91,21 +89,32 @@ class ChatApp {
                 return;
             }
 
-            // 카테고리 수에 따라 분기
-            const categories = [...new Set(chunks.map(c => c.category))];
+            if (chunks.length === 1) {
+                // 단일 청크 → 바로 답변
+                const answer = await this.callGroqWithRetry(text, chunks[0].context, loading);
+                if (loading) loading.remove();
+                this.appendMessage('bot', answer);
+                return;
+            }
 
-            if (categories.length === 1) {
-                // 단일 카테고리 → 바로 답변
+            // 복수 청크 → Groq로 주제 분류
+            const loadingText = loading?.querySelector('.loading-text');
+            if (loadingText) loadingText.textContent = '관련 내용을 분석하고 있습니다...';
+
+            const topics = await this.classifyChunks(text, chunks);
+
+            if (!topics || topics.length <= 1) {
+                // 분류 실패 또는 단일 주제 → 전체 컨텍스트로 바로 답변
                 const context = chunks.map(c => c.context).join('\n\n');
                 const answer = await this.callGroqWithRetry(text, context, loading);
                 if (loading) loading.remove();
                 this.appendMessage('bot', answer);
             } else {
-                // 복수 카테고리 → 선택지 제시
+                // 복수 주제 → 선택지 제시
                 if (loading) loading.remove();
-                this.pendingSelections = chunks;
+                this.pendingSelections = topics;
                 this.pendingQuery = text;
-                this.appendMessage('bot', this.buildSelectionMenu(text, chunks));
+                this.appendMessage('bot', this.buildSelectionMenu(text, topics));
             }
 
         } catch (error) {
@@ -133,6 +142,59 @@ class ChatApp {
             this.userInput.disabled = false;
             this.userInput.focus();
             this.scrollToBottom();
+        }
+    }
+
+    // 청크 내용을 Groq로 분석해 주제별로 그룹핑
+    async classifyChunks(query, chunks) {
+        const chunkList = chunks
+            .map((c, i) => `[${i}] ${c.context.slice(0, 400)}`)
+            .join('\n\n');
+
+        const prompt = `사용자 질문: "${query}"
+
+아래는 검색된 교범 내용입니다:
+${chunkList}
+
+이 내용들을 주제별로 2~4개 그룹으로 분류하고, 각 그룹에 짧은 주제명(10자 이내)을 붙여주세요.
+반드시 아래 JSON 형식으로만 답하세요. 다른 텍스트는 출력하지 마세요:
+[{"topic":"주제명","indices":[0]},{"topic":"주제명2","indices":[1,2]}]`;
+
+        try {
+            const response = await fetch(CONFIG.API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: CONFIG.MODEL,
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: 200,
+                    temperature: 0
+                })
+            });
+
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            const raw = data.choices?.[0]?.message?.content?.trim() ?? '';
+            const match = raw.match(/\[[\s\S]*\]/);
+            if (!match) return null;
+
+            const groups = JSON.parse(match[0]);
+            if (!Array.isArray(groups) || groups.length < 2) return null;
+
+            return groups.map(g => ({
+                label: g.topic,
+                context: (g.indices || [])
+                    .filter(i => typeof i === 'number' && i >= 0 && i < chunks.length)
+                    .map(i => chunks[i].context)
+                    .join('\n\n')
+            })).filter(g => g.context);
+
+        } catch {
+            return null;
         }
     }
 
@@ -166,11 +228,11 @@ class ChatApp {
         ) || null;
     }
 
-    // 카테고리 선택 메뉴 텍스트 생성
-    buildSelectionMenu(query, chunks) {
+    // 주제 선택 메뉴 텍스트 생성
+    buildSelectionMenu(query, topics) {
         const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣'];
-        const options = chunks.map((c, i) => `${nums[i]} ${c.label}`).join('\n');
-        return `"${query}"과 관련해서 아래 항목들이 있어요. 어떤 내용이 궁금하신가요? 😊\n\n${options}`;
+        const options = topics.map((t, i) => `${nums[i]} ${t.label}`).join('\n');
+        return `"${query}"과 관련해서 아래 내용들이 있어요. 어떤 게 궁금하신가요? 😊\n\n${options}`;
     }
 
     appendMessage(role, text) {
@@ -238,7 +300,7 @@ class ChatApp {
         });
     }
 
-    // 관련 청크 검색 — 카테고리별로 묶어 배열로 반환
+    // 관련 청크 검색 — 점수순 정렬, 최대 6개 반환
     findRelevantChunks(query) {
         const ranked = manualData.map(item => {
             let score = 0;
@@ -256,21 +318,9 @@ class ChatApp {
             return (a.source || '').localeCompare(b.source || '');
         });
 
-        // 카테고리별 최상위 1개씩, 최대 4개
-        const seen = new Set();
-        const result = [];
-        for (const item of ranked) {
-            if (!seen.has(item.category)) {
-                seen.add(item.category);
-                result.push({
-                    label: item.source || item.category,
-                    category: item.category,
-                    context: `[출처: ${item.source}]\n${item.text}`
-                });
-            }
-            if (result.length >= 4) break;
-        }
-        return result;
+        return ranked.slice(0, 6).map(item => ({
+            context: `[출처: ${item.source}]\n${item.text}`
+        }));
     }
 
     async getGroqResponse(userMessage, context = '') {
