@@ -14,10 +14,13 @@ class ChatApp {
         this.apiKey = CONFIG.GROQ_API_KEY;
         this.isTyping = false;
 
-        // 선택 대기 상태 관리
-        this.pendingChunks = {};        // { 1: context, 2: context, ... }
-        this.waitingForSelection = false;
-        this.originalQuestion = '';
+        // 대화 상태 통합 관리
+        this.conversationState = {
+            mode: 'normal',             // 'normal' | 'waiting_selection' | 'waiting_context'
+            pendingChunks: {},          // { 1: [context, ...], 2: [context], ... }
+            originalQuestion: '',
+            contextQuestion: ''         // Groq가 생성한 질문 텍스트
+        };
 
         this.init();
     }
@@ -38,10 +41,13 @@ class ChatApp {
         this.userInput.focus();
     }
 
-    clearPendingState() {
-        this.pendingChunks = {};
-        this.waitingForSelection = false;
-        this.originalQuestion = '';
+    resetState() {
+        this.conversationState = {
+            mode: 'normal',
+            pendingChunks: {},
+            originalQuestion: '',
+            contextQuestion: ''
+        };
     }
 
     async handleSend() {
@@ -56,19 +62,21 @@ class ChatApp {
 
         let loading;
         try {
-            // ── 선택 대기 중 ──────────────────────────────────────────
-            if (this.waitingForSelection) {
-                const trimmed = text.trim();
-                const num = parseInt(trimmed);
-                const maxNum = Object.keys(this.pendingChunks).length;
+            const { mode, pendingChunks, originalQuestion } = this.conversationState;
+
+            // ── 선택 대기 중 (waiting_selection | waiting_context) ──────
+            if (mode !== 'normal') {
+                const num = parseInt(text.trim());
+                const maxNum = Object.keys(pendingChunks).length;
 
                 if (!isNaN(num) && num >= 1 && num <= maxNum) {
-                    // 유효한 번호 선택
-                    const context = this.pendingChunks[num];
-                    const originalQuery = this.originalQuestion;
-                    this.clearPendingState();
+                    // 유효한 번호 → 저장된 청크 꺼내서 바로 답변
+                    const contextChunks = pendingChunks[num];
+                    const context = contextChunks.join('\n\n');
+                    const query = originalQuestion;
+                    this.resetState();
                     loading = this.showLoading();
-                    const answer = await this.callGroqWithRetry(originalQuery, context, loading);
+                    const answer = await this.callGroqWithRetry(query, context, loading);
                     if (loading) loading.remove();
                     this.appendMessage('bot', answer);
                     return;
@@ -76,15 +84,15 @@ class ChatApp {
 
                 if (!isNaN(num)) {
                     // 숫자이지만 범위 밖
-                    this.appendMessage('bot', `1~${maxNum} 중에서 선택해주세요.`);
+                    this.appendMessage('bot', `1~${maxNum} 중에서 골라주세요! 😊`);
                     return; // 대기 상태 유지
                 }
 
-                // 숫자가 아닌 새 질문 → 대기 상태 초기화 후 새 질문 처리
-                this.clearPendingState();
+                // 숫자가 아닌 새 질문 → 상태 초기화 후 새 질문 처리
+                this.resetState();
             }
 
-            // ── 새 질문 처리 ─────────────────────────────────────────
+            // ── 새 질문 처리 ─────────────────────────────────────────────
             loading = this.showLoading();
 
             // Firestore RAG 검색 → 없으면 data.js 폴백
@@ -93,9 +101,7 @@ class ChatApp {
                 const { searchChunks } = await import('./rag.js');
                 const ragChunks = await searchChunks(text);
                 if (ragChunks.length > 0) {
-                    chunks = ragChunks.map(c => ({
-                        context: `[출처: ${c.filename}]\n${c.chunk}`
-                    }));
+                    chunks = ragChunks.map(c => `[출처: ${c.filename}]\n${c.chunk}`);
                 }
             } catch { /* Firebase 미설정 시 무시 */ }
 
@@ -111,35 +117,41 @@ class ChatApp {
 
             if (chunks.length === 1) {
                 // 단일 청크 → 바로 답변
-                const answer = await this.callGroqWithRetry(text, chunks[0].context, loading);
+                const answer = await this.callGroqWithRetry(text, chunks[0], loading);
                 if (loading) loading.remove();
                 this.appendMessage('bot', answer);
                 return;
             }
 
-            // 복수 청크 → Groq로 주제 분류
-            const loadingText = loading?.querySelector('.loading-text');
-            if (loadingText) loadingText.textContent = '관련 내용을 분석하고 있습니다...';
+            // 복수 청크 → Groq로 내용 분류
+            const lt = loading?.querySelector('.loading-text');
+            if (lt) lt.textContent = '관련 내용을 분석하고 있습니다...';
 
-            const topics = await this.classifyChunks(text, chunks);
+            const classified = await this.classifyChunks(text, chunks);
 
-            if (!topics || topics.length < 2) {
-                // 분류 실패 또는 단일 주제 → 전체 컨텍스트로 바로 답변
-                const context = chunks.map(c => c.context).join('\n\n');
-                const answer = await this.callGroqWithRetry(text, context, loading);
+            if (!classified || classified.groups.length < 2) {
+                // 분류 실패 또는 단일 그룹 → 전체로 바로 답변
+                const answer = await this.callGroqWithRetry(text, chunks.join('\n\n'), loading);
                 if (loading) loading.remove();
                 this.appendMessage('bot', answer);
                 return;
             }
 
-            // 주제별 청크를 pendingChunks에 저장 후 선택지 제시
+            // 선택지 제시 — 각 그룹의 청크를 pendingChunks에 번호 키로 저장
             if (loading) loading.remove();
-            topics.forEach((t, i) => {
-                this.pendingChunks[i + 1] = t.context;
+            const newPendingChunks = {};
+            classified.groups.forEach((g, i) => {
+                newPendingChunks[i + 1] = g.chunks; // g.chunks = string[]
             });
-            this.waitingForSelection = true;
-            this.originalQuestion = text;
-            this.appendMessage('bot', this.buildSelectionMenu(text, topics));
+
+            this.conversationState = {
+                mode: classified.type === 'subtopics' ? 'waiting_context' : 'waiting_selection',
+                pendingChunks: newPendingChunks,
+                originalQuestion: text,
+                contextQuestion: classified.question
+            };
+
+            this.appendMessage('bot', this.buildMenu(classified));
 
         } catch (error) {
             console.error("Chat Error:", error);
@@ -169,10 +181,10 @@ class ChatApp {
         }
     }
 
-    // 청크 내용을 Groq로 분석해 주제별 그룹핑
+    // 청크들을 Groq로 분석 — 같은 주제의 세부항목(subtopics)인지 다른 주제(different_topics)인지 판단
     async classifyChunks(query, chunks) {
         const chunkList = chunks
-            .map((c, i) => `[${i}] ${c.context.slice(0, 400)}`)
+            .map((c, i) => `[${i}] ${c.slice(0, 400)}`)
             .join('\n\n');
 
         const prompt = `사용자 질문: "${query}"
@@ -180,9 +192,14 @@ class ChatApp {
 아래는 검색된 교범 내용입니다:
 ${chunkList}
 
-이 내용들을 주제별로 2~4개 그룹으로 분류하고, 각 그룹에 짧은 주제명(10자 이내)을 붙여주세요.
+다음 기준으로 분석하세요:
+- 청크들이 같은 주제의 세부 대상/항목(예: 여러 교관 종류, 여러 훈련 유형)이면 type: "subtopics"
+  → question: "어떤 [대상]에 대해 궁금하세요? 😊" 형태로 대상을 물어보는 질문
+- 청크들이 서로 다른 주제이면 type: "different_topics"
+  → question: "아래 중 어떤 내용이 궁금하신가요? 😊"
+
 반드시 아래 JSON 형식으로만 답하세요. 다른 텍스트는 출력하지 마세요:
-[{"topic":"주제명","indices":[0]},{"topic":"주제명2","indices":[1,2]}]`;
+{"type":"subtopics","question":"어떤 교관에 지원하려고 하세요? 😊","groups":[{"label":"기내방송 교관","indices":[0]},{"label":"일본어 방송 교관","indices":[1]}]}`;
 
         try {
             const response = await fetch(CONFIG.API_URL, {
@@ -194,7 +211,7 @@ ${chunkList}
                 body: JSON.stringify({
                     model: CONFIG.MODEL,
                     messages: [{ role: 'user', content: prompt }],
-                    max_tokens: 200,
+                    max_tokens: 300,
                     temperature: 0
                 })
             });
@@ -203,27 +220,41 @@ ${chunkList}
 
             const data = await response.json();
             const raw = data.choices?.[0]?.message?.content?.trim() ?? '';
-            const match = raw.match(/\[[\s\S]*\]/);
+
+            // JSON 객체 추출 (마크다운 코드블록 포함 대응)
+            const match = raw.match(/\{[\s\S]*\}/);
             if (!match) return null;
 
-            const groups = JSON.parse(match[0]);
-            if (!Array.isArray(groups) || groups.length < 2) return null;
+            const parsed = JSON.parse(match[0]);
+            if (!parsed.groups || !Array.isArray(parsed.groups) || parsed.groups.length < 2) return null;
 
-            const topics = groups.map(g => ({
-                label: String(g.topic || '').trim(),
-                // Number() 로 강제 변환해 Groq가 문자열 인덱스를 반환해도 처리
-                context: (g.indices || [])
+            const groups = parsed.groups.map(g => ({
+                label: String(g.label || g.topic || '').trim(),
+                // indices를 Number로 강제 변환해 문자열 인덱스도 처리
+                chunks: (g.indices || [])
                     .map(Number)
                     .filter(i => !isNaN(i) && i >= 0 && i < chunks.length)
-                    .map(i => chunks[i].context)
-                    .join('\n\n')
-            })).filter(t => t.label && t.context);
+                    .map(i => chunks[i])
+            })).filter(g => g.label && g.chunks.length > 0);
 
-            return topics.length >= 2 ? topics : null;
+            if (groups.length < 2) return null;
+
+            return {
+                type: parsed.type === 'subtopics' ? 'subtopics' : 'different_topics',
+                question: String(parsed.question || '어떤 내용이 궁금하신가요? 😊'),
+                groups
+            };
 
         } catch {
             return null;
         }
+    }
+
+    // 선택 메뉴 텍스트 생성
+    buildMenu(classified) {
+        const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣'];
+        const options = classified.groups.map((g, i) => `${nums[i]} ${g.label}`).join('\n');
+        return `${classified.question}\n\n${options}`;
     }
 
     // 429 재시도 포함 Groq 호출 래퍼
@@ -241,13 +272,6 @@ ${chunkList}
             }
             throw firstError;
         }
-    }
-
-    // 주제 선택 메뉴 텍스트 생성
-    buildSelectionMenu(query, topics) {
-        const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣'];
-        const options = topics.map((t, i) => `${nums[i]} ${t.label}`).join('\n');
-        return `"${query}"과 관련해서 아래 내용들이 있어요. 어떤 게 궁금하신가요? 😊\n\n${options}`;
     }
 
     appendMessage(role, text) {
@@ -315,7 +339,7 @@ ${chunkList}
         });
     }
 
-    // 관련 청크 검색 — 점수순 상위 6개 반환
+    // 관련 청크 검색 — 점수순 상위 6개, context 문자열 배열 반환
     findRelevantChunks(query) {
         const ranked = manualData.map(item => {
             let score = 0;
@@ -332,9 +356,7 @@ ${chunkList}
             return (a.source || '').localeCompare(b.source || '');
         });
 
-        return ranked.slice(0, 6).map(item => ({
-            context: `[출처: ${item.source}]\n${item.text}`
-        }));
+        return ranked.slice(0, 6).map(item => `[출처: ${item.source}]\n${item.text}`);
     }
 
     async getGroqResponse(userMessage, context = '') {
