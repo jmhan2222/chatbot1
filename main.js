@@ -1,7 +1,7 @@
 import { manualData } from './data.js';
 
 const CONFIG = {
-    GROQ_API_KEY: "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",
+    GROQ_API_KEY: "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",
     MODEL: "llama-3.1-8b-instant",
     API_URL: "https://api.groq.com/openai/v1/chat/completions"
 };
