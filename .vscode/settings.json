@@ -1,3 +1,4 @@
 {
-  "IDX.agenticWorkspace": true
+  "IDX.agenticWorkspace": true,
+  "workbench.startupEditor": "readme"
 }
